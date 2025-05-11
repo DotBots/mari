@@ -29,6 +29,9 @@
 #define DEFAULT_NETWORK_ADDRESS 0x12345678UL  ///< Default network address
 #endif
 
+#define DEFAULT_BROADCAST_ADDRESS_TOP 0xFFFFFFFFUL  ///< Default Broadcast address top
+#define DEFAULT_BROADCAST_ADDRESS_BOT 0xFF          ///< Default Broadcast address bot
+
 #define BL_BLE_PAYLOAD_MAX_LENGTH        UINT8_MAX
 #define BL_IEEE802154_PAYLOAD_MAX_LENGTH (125UL)  ///< Total usable payload for IEEE 802.15.4 is 125 octets (PSDU) when CRC is activated
 
@@ -128,5 +131,22 @@ void bl_radio_get_rx_packet(uint8_t *packet, uint8_t *length);
 
 void bl_radio_tx_prepare(const uint8_t *tx_buffer, uint8_t length);
 void bl_radio_tx_dispatch(void);
+
+/**
+ * @brief Set the base of the hardware network address used to send/receive radio packets
+ *
+ * @param[in] base set to 0 or 1 to set BASE0 or BASE1
+ * @param[in] addr Network address
+ */
+void bl_radio_set_network_base_address(uint8_t base,  uint32_t addr);
+
+/**
+ * @brief Set the prefix of the hardware network address used to send/receive radio packets
+ *
+ * @param[in] prefix prefix of the hardware network address. values: [0, 7]
+ * @param[in] addr Network address
+ */
+void bl_radio_set_network_prefix_address(uint8_t prefix,  uint8_t addr)
+
 
 #endif // __BL_RADIO_H

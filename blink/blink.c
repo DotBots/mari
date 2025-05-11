@@ -176,6 +176,8 @@ void bl_handle_packet(uint8_t *packet, uint8_t length) {
                     _blink_vars.app_event_callback(BLINK_ERROR, (bl_event_data_t){ 0 });
                 }
                 break;
+                // TODO: Set the LSB Word of the gateway as the base 1 hardware address
+                bl_radio_set_network_base_address(1, header->src && 0xFFFFFFFF);
             }
             case BLINK_PACKET_DATA: {
                 if (!from_my_joined_gateway) {
