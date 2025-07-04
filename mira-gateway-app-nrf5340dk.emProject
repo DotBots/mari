@@ -27,7 +27,7 @@
     c_additional_options="-Wall;-Wextra;-Wunused-variable;-Wuninitialized;-Wmissing-field-initializers;-Wundef;-ffunction-sections;-fdata-sections"
     c_only_additional_options="-Wno-missing-prototypes"
     c_preprocessor_definitions="ARM_MATH_ARMV8MML;NRF5340_XXAA;NRF_APPLICATION;__NRF_FAMILY;__NO_FPU_ENABLE;FLASH_PLACEMENT=1"
-    c_user_include_directories="$(SolutionDir)/../drv;$(SolutionDir)/../mira;$(PackagesDir)/nRF/Device/Include;$(PackagesDir)/CMSIS_5/CMSIS/Core/Include"
+    c_user_include_directories="$(SolutionDir)/../drv;$(SolutionDir)/../mira;$(PackagesDir)/nRF/Device/Include;$(PackagesDir)/CMSIS_5/CMSIS/Core/Include;$(ProjectDir)/happyserial/src_c/happyserial;$(ProjectDir)/happyserial/src_c/ports"
     debug_register_definition_file="$(PackagesDir)/nRF/XML/nrf5340_application_Registers.xml"
     debug_stack_pointer_start="__stack_end__"
     debug_start_from_entry_point_symbol="No"

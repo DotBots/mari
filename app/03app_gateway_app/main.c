@@ -15,6 +15,7 @@
 #include "mr_device.h"
 #include "mr_gpio.h"
 #include "mira.h"
+#include "happyserial.h"
 
 //=========================== defines ==========================================
 
@@ -28,6 +29,7 @@ gateway_app_vars_t gateway_app_vars = { 0 };
 
 //=========================== prototypes =======================================
 
+void _happyserial_rx_cb(uint8_t *buf, uint8_t bufLen);
 void _setup_debug_pins(void);
 
 //=========================== main =============================================
@@ -36,6 +38,8 @@ int main(void) {
     printf("Hello Mira Gateway App Core (UART) %016llX\n", mr_device_id());
 
     _setup_debug_pins();
+
+    happyserial_init(_happyserial_rx_cb);
 
     // TODO: communicate with the network core via IPC, and make sure we start the network core
 
@@ -51,6 +55,10 @@ int main(void) {
 //=========================== callbacks ========================================
 
 //=========================== private ========================================
+
+void _happyserial_rx_cb(uint8_t *buf, uint8_t bufLen) {
+    happyserial_tx(buf, bufLen);
+}
 
 void _setup_debug_pins(void) {
     // Assign P0.28 to P0.31 to the network core (for debugging association.c via LEDs)

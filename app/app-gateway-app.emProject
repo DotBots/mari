@@ -18,6 +18,18 @@
     <folder Name="Source">
       <configuration Name="Common" filter="c;cpp;cxx;cc;h;s;asm;inc" />
       <file file_name="main.c" />
+      <folder Name="happyserial">
+        <file file_name="happyserial/src_c/happyserial/happyserial.c" />
+        <file file_name="happyserial/src_c/happyserial/happyserial.h" />
+        <file file_name="happyserial/src_c/happyserial/hdlc.c" />
+        <file file_name="happyserial/src_c/happyserial/hdlc.h" />
+        <file file_name="happyserial/src_c/happyserial/crc.c" />
+        <file file_name="happyserial/src_c/happyserial/crc.h" />
+      </folder>
+      <folder Name="happyserial-nrf5340-app">
+        <file file_name="happyserial/src_c/ports/nRF5430_app/uart.c" />
+        <file file_name="happyserial/src_c/ports/uart.h" />
+      </folder>
     </folder>
     <folder Name="System">
       <file file_name="$(ProjectDir)/../../nRF/System/$(Target)_system_init.c" />
