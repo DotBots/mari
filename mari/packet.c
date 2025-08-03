@@ -12,6 +12,7 @@
 #include "scheduler.h"
 #include "association.h"
 #include "packet.h"
+#include "sec.h"
 
 //=========================== prototypes =======================================
 
@@ -31,6 +32,14 @@ size_t mr_build_packet_keepalive(uint8_t *buffer, uint64_t dst) {
 
 size_t mr_build_packet_join_request(uint8_t *buffer, uint64_t dst) {
     return _set_header(buffer, dst, MARI_PACKET_JOIN_REQUEST);
+}
+
+size_t mr_build_packet_join_request_with_m1(uint8_t *buffer, uint64_t dst) {
+    size_t header_len = _set_header(buffer, dst, MARI_PACKET_JOIN_REQUEST);
+    // prepend 0xf5 (CBOR true) to indicate it's an EDHOC message
+    buffer[header_len] = 0xf5;
+    size_t m1_len      = mr_sec_edhoc_set_ready_message(buffer + header_len + 1);
+    return header_len + 1 + m1_len;
 }
 
 size_t mr_build_packet_join_response(uint8_t *buffer, uint64_t dst) {

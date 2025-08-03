@@ -5,6 +5,7 @@
       Name="Common"
       project_dependencies="01mari(01mari);00drv_mr_timer_hf(00drv)"
       project_directory="03app_node"
+      linker_additional_files="$(ProjectDir)/../../sec/liblakers_c_dbg.a"
       project_type="Executable" />
     <folder Name="Setup">
       <file file_name="$(ProjectDir)/../../nRF/Setup/$(Target)_flash_placement.xml" />

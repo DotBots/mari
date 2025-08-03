@@ -71,6 +71,7 @@ typedef enum {
 size_t mr_build_packet_data(uint8_t *buffer, uint64_t dst, uint8_t *data, size_t data_len);
 
 size_t mr_build_packet_join_request(uint8_t *buffer, uint64_t dst);
+size_t mr_build_packet_join_request_with_m1(uint8_t *buffer, uint64_t dst);
 
 size_t mr_build_packet_join_response(uint8_t *buffer, uint64_t dst);
 

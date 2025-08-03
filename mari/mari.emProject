@@ -4,11 +4,11 @@
     Name="Common"
     build_output_directory="Output/$(BuildTarget)/$(Configuration)/Obj"
     build_output_file_name="$(OutDir)/$(ProjectName)-$(BuildTarget)$(LIB)"
-    c_user_include_directories="$(SolutionDir);$(SolutionDir)/../drv;$(PackagesDir)/nRF/Device/Include;$(PackagesDir)/CMSIS_5/CMSIS/Core/Include" />
+    c_user_include_directories="$(SolutionDir);$(SolutionDir)/../sec;$(SolutionDir)/../drv;$(PackagesDir)/nRF/Device/Include;$(PackagesDir)/CMSIS_5/CMSIS/Core/Include" />
   <project Name="01mari">
     <configuration
       Name="Common"
-      project_dependencies="00drv_mr_radio(00drv);00drv_mr_timer_hf(00drv);00drv_mr_rng(00drv);00drv_mr_gpio(00drv)"
+      project_dependencies="00drv_mr_radio(00drv);00drv_mr_timer_hf(00drv);00drv_mr_rng(00drv);00drv_mr_gpio(00drv);02sec(02sec)"
       project_directory="."
       project_type="Library" />
     <configuration

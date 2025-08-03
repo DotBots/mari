@@ -25,6 +25,7 @@
 #include "mari.h"
 #include "scheduler.h"
 #include "bloom.h"
+#include "sec.h"
 #include "queue.h"
 
 //=========================== debug ============================================
@@ -164,16 +165,19 @@ uint16_t mr_assoc_get_network_id(void) {
 void mr_assoc_node_handle_synced(void) {
     mr_assoc_set_state(JOIN_STATE_SYNCED);
     mr_assoc_node_reset_backoff();
-    mr_queue_set_join_request(mr_mac_get_synced_gateway());
+    mr_sec_edhoc_set_state(EDHOC_M1_PENDING);
 }
 
 bool mr_assoc_node_ready_to_join(void) {
-    return assoc_vars.state == JOIN_STATE_SYNCED && assoc_vars.backoff_random_time == 0;
+    bool assoc_ready = assoc_vars.state == JOIN_STATE_SYNCED && assoc_vars.backoff_random_time == 0;
+    bool sec_ready   = mr_sec_edhoc_is_m1_ready();
+    return assoc_ready && sec_ready;
 }
 
 void mr_assoc_node_start_joining(void) {
     uint32_t now_ts                     = mr_timer_hf_now(MARI_TIMER_DEV);
     assoc_vars.join_response_timeout_ts = now_ts + MARI_JOINING_STATE_TIMEOUT;
+    mr_queue_set_join_request(mr_mac_get_synced_gateway());
     mr_assoc_set_state(JOIN_STATE_JOINING);
 }
 

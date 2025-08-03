@@ -22,6 +22,7 @@
 #include "association.h"
 #include "queue.h"
 #include "bloom.h"
+#include "sec.h"
 #include "mari.h"
 
 //=========================== defines ==========================================
@@ -48,6 +49,10 @@ void mari_init(mr_node_type_t node_type, uint16_t net_id, schedule_t *app_schedu
     _mari_vars.node_type          = node_type;
     _mari_vars.app_event_callback = app_event_callback;
 
+    if (node_type == MARI_NODE) {
+        // only the node uses the security module, the gateway will offload it to the MariLib application
+        mr_sec_init();
+    }
     mr_assoc_init(net_id, event_callback);
     mr_scheduler_init(app_schedule);
     mr_mac_init(event_callback);
@@ -128,7 +133,15 @@ void mr_handle_packet(uint8_t *packet, uint8_t length) {
                     mr_queue_set_join_response(header->src, (uint8_t)cell_id);
                     // set the dirty flag that will trigger the event loop to compute the bloom filter
                     mr_bloom_gateway_set_dirty();
-                    _mari_vars.app_event_callback(MARI_NODE_JOINED, (mr_event_data_t){ .data.node_info.node_id = header->src });
+                    mari_packet_t mari_packet = {
+                        .len         = length,
+                        .header      = header,
+                        .payload     = packet + sizeof(mr_packet_header_t),
+                        .payload_len = length - sizeof(mr_packet_header_t)
+                    };
+                    _mari_vars.app_event_callback(MARI_NODE_JOINED, (mr_event_data_t){
+                                                                        .data.node_info.node_id    = header->src,
+                                                                        .data.node_info.new_packet = mari_packet });
                 } else {
                     _mari_vars.app_event_callback(MARI_ERROR, (mr_event_data_t){ .tag = MARI_GATEWAY_FULL });
                 }
@@ -238,6 +251,7 @@ void mari_event_loop(void) {
             mr_bloom_gateway_event_loop();
             break;
         case MARI_NODE:
+            mr_sec_edhoc_event_loop();
             break;
     }
 }

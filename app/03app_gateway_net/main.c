@@ -59,9 +59,9 @@ static void _mari_event_callback(mr_event_t event, mr_event_data_t event_data) {
             break;
         case MARI_NODE_JOINED:
             printf("%d New node joined: %016llX  (%d nodes connected)\n", now_ts_s, event_data.data.node_info.node_id, mari_gateway_count_nodes());
-            ipc_shared_data.radio_to_uart_len = 1 + sizeof(uint64_t);
+            ipc_shared_data.radio_to_uart_len = event_data.data.new_packet.len + 1;
             ipc_shared_data.radio_to_uart[0]  = MARI_EDGE_NODE_JOINED;
-            memcpy((void *)ipc_shared_data.radio_to_uart + 1, &event_data.data.node_info.node_id, sizeof(uint64_t));
+            memcpy((void *)ipc_shared_data.radio_to_uart + 1, event_data.data.new_packet.header, event_data.data.new_packet.len);
             break;
         case MARI_NODE_LEFT:
             printf("%d Node left: %016llX, reason: %u  (%d nodes connected)\n", now_ts_s, event_data.data.node_info.node_id, event_data.tag, mari_gateway_count_nodes());

@@ -72,9 +72,10 @@ typedef struct {
 
 typedef struct {
     union {
-        mari_packet_t new_packet;
+        mari_packet_t new_packet;  // TODO: rename to simply 'packet'
         struct {
-            uint64_t node_id;
+            mari_packet_t new_packet;
+            uint64_t      node_id;
         } node_info;
         struct {
             uint64_t gateway_id;
