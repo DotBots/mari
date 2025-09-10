@@ -47,27 +47,35 @@ static void _mari_event_callback(mr_event_t event, mr_event_data_t event_data) {
     switch (event) {
         case MARI_NEW_PACKET:
         {
+            mutex_lock();
             ipc_shared_data.radio_to_uart_len = event_data.data.new_packet.len + 1;
             ipc_shared_data.radio_to_uart[0]  = MARI_EDGE_DATA;
             memcpy((void *)ipc_shared_data.radio_to_uart + 1, event_data.data.new_packet.header, event_data.data.new_packet.len);
+            mutex_unlock();
             break;
         }
         case MARI_KEEPALIVE:
+            mutex_lock();
             ipc_shared_data.radio_to_uart_len = 1 + sizeof(uint64_t);
             ipc_shared_data.radio_to_uart[0]  = MARI_EDGE_KEEPALIVE;
             memcpy((void *)ipc_shared_data.radio_to_uart + 1, &event_data.data.node_info.node_id, sizeof(uint64_t));
+            mutex_unlock();
             break;
         case MARI_NODE_JOINED:
             printf("%d New node joined: %016llX  (%d nodes connected)\n", now_ts_s, event_data.data.node_info.node_id, mari_gateway_count_nodes());
+            mutex_lock();
             ipc_shared_data.radio_to_uart_len = 1 + sizeof(uint64_t);
             ipc_shared_data.radio_to_uart[0]  = MARI_EDGE_NODE_JOINED;
             memcpy((void *)ipc_shared_data.radio_to_uart + 1, &event_data.data.node_info.node_id, sizeof(uint64_t));
+            mutex_unlock();
             break;
         case MARI_NODE_LEFT:
             printf("%d Node left: %016llX, reason: %u  (%d nodes connected)\n", now_ts_s, event_data.data.node_info.node_id, event_data.tag, mari_gateway_count_nodes());
+            mutex_lock();
             ipc_shared_data.radio_to_uart_len = 1 + sizeof(uint64_t);
             ipc_shared_data.radio_to_uart[0]  = MARI_EDGE_NODE_LEFT;
             memcpy((void *)ipc_shared_data.radio_to_uart + 1, &event_data.data.node_info.node_id, sizeof(uint64_t));
+            mutex_unlock();
             break;
         case MARI_ERROR:
             printf("Error, reason: %u\n", event_data.tag);
@@ -80,9 +88,11 @@ static void _mari_event_callback(mr_event_t event, mr_event_data_t event_data) {
 }
 
 static void _to_uart_gateway_loop(void) {
+    mutex_lock();
     ipc_shared_data.radio_to_uart[0]               = MARI_EDGE_GATEWAY_INFO;
     size_t len                                     = mr_build_uart_packet_gateway_info((uint8_t *)(ipc_shared_data.radio_to_uart + 1));
     ipc_shared_data.radio_to_uart_len              = 1 + len;
+    mutex_unlock();
     NRF_IPC_NS->TASKS_SEND[IPC_CHAN_RADIO_TO_UART] = 1;
 }
 
@@ -120,8 +130,10 @@ int main(void) {
                 continue;
             }
 
+            mutex_lock();
             uint8_t *mari_frame     = (uint8_t *)ipc_shared_data.uart_to_radio_tx + 1;
             uint8_t  mari_frame_len = ipc_shared_data.uart_to_radio_len - 1;
+            mutex_unlock();
 
             mr_packet_header_t *header = (mr_packet_header_t *)mari_frame;
             header->src                = mr_device_id();

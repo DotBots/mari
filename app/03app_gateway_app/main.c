@@ -124,8 +124,10 @@ int main(void) {
                     break;
                 case MR_HDLC_STATE_READY:
                 {
+                    mutex_lock();
                     size_t msg_len                    = mr_hdlc_decode((uint8_t *)ipc_shared_data.uart_to_radio);
                     ipc_shared_data.uart_to_radio_len = msg_len;
+                    mutex_unlock();
                     if (msg_len) {
                         NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
                     }
@@ -137,7 +139,9 @@ int main(void) {
 
         if (_app_vars.mari_frame_received) {
             _app_vars.mari_frame_received = false;
+            mutex_lock();
             size_t frame_len              = mr_hdlc_encode((uint8_t *)ipc_shared_data.radio_to_uart, ipc_shared_data.radio_to_uart_len, _app_vars.hdlc_encode_buffer);
+            mutex_unlock();
             mr_uart_write(MR_UART_INDEX, _app_vars.hdlc_encode_buffer, frame_len);
         }
     }
