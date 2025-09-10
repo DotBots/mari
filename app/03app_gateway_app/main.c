@@ -14,6 +14,7 @@
 
 #include "ipc.h"
 
+#include "mr_clock.h"
 #include "mr_device.h"
 #include "hdlc.h"
 #include "uart.h"
@@ -104,6 +105,15 @@ int main(void) {
     _setup_debug_pins();
 
     _configure_ram_non_secure(2, 1);
+
+    // Enable HFCLK with external 32MHz oscillator
+    mr_hfclk_init();
+
+    // APPMUTEX (address at 0x41030000 => periph ID is 48)
+    NRF_SPU_S->PERIPHID[48].PERM = (SPU_PERIPHID_PERM_SECUREMAPPING_UserSelectable << SPU_PERIPHID_PERM_SECUREMAPPING_Pos |
+                                    SPU_PERIPHID_PERM_SECATTR_NonSecure << SPU_PERIPHID_PERM_SECATTR_Pos |
+                                    SPU_PERIPHID_PERM_PRESENT_IsPresent << SPU_PERIPHID_PERM_PRESENT_Pos);
+
     _init_ipc();
     mr_uart_init(MR_UART_INDEX, &_mr_uart_rx_pin, &_mr_uart_tx_pin, MR_UART_BAUDRATE, &_uart_callback);
 
