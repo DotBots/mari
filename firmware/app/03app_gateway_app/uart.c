@@ -49,9 +49,9 @@
 // N+1 is written while N is still filling: no software step sits between two
 // buffers, and no byte arrives with the receiver stopped.
 //
-// One slot is always in flight and one is always staged behind it, so the
-// buffering the main loop can fall behind by is UART_RX_SLOT_COUNT - 2 filled
-// slots plus whatever has landed in the one being filled, about 1.9 ms of
+// A slot is staged only while fewer than UART_RX_SLOT_COUNT are spoken for, so
+// from a drained start every slot fills before any byte is discarded: the main
+// loop can fall behind by UART_RX_SLOT_COUNT * UART_RX_SLOT_SIZE, 2.56 ms of
 // line-rate input at 1 Mbps. The worst-case main-loop pass is well under that;
 // uart_rx_slot_full is the counter that says otherwise.
 #define UART_RX_SLOT_SIZE    (64U)
