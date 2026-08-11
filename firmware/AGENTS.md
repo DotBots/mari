@@ -44,7 +44,7 @@ make all                                     # default
 make docker                                  # CI path
 ```
 
-One host test, for the gateway's HDLC decoder — from
+One host test, for the gateway's HDLC decoder. From
 `app/03app_gateway_app/`, `cc -o test_hdlc test_hdlc.c hdlc.c &&
 ./test_hdlc` (regenerate its vectors from marilib's encoder with
 `PYTHONPATH=../../../marilib python3 test_hdlc_vectors.py >
