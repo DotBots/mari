@@ -4,7 +4,7 @@ from enum import IntEnum
 
 from marilib.protocol import Packet, PacketFieldMetadata, PacketType
 
-MARI_PROTOCOL_VERSION = 3
+MARI_PROTOCOL_VERSION = 4
 MARI_BROADCAST_ADDRESS = 0xFFFFFFFFFFFFFFFF
 MARI_NET_ID_DEFAULT = 0x0001
 

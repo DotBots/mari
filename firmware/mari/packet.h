@@ -21,7 +21,7 @@
 
 //=========================== defines ==========================================
 
-#define MARI_PROTOCOL_VERSION 3
+#define MARI_PROTOCOL_VERSION 4
 
 #define MARI_NET_ID_PATTERN_ANY 0
 #define MARI_NET_ID_DEFAULT     1
