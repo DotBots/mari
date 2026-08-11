@@ -9,15 +9,11 @@
 import logging
 import sys
 import threading
-import time
 from typing import Callable
 
 import serial
 from serial.tools import list_ports
 
-SERIAL_PAYLOAD_CHUNK_SIZE = 64
-SERIAL_PAYLOAD_CHUNK_SIZE_WITH_TRIGGER_BYTE = 63
-SERIAL_PAYLOAD_CHUNK_DELAY = 0.003  # 2 ms
 SERIAL_DEFAULT_PORT = "/dev/ttyACM0"
 SERIAL_DEFAULT_BAUDRATE = 1_000_000
 # SERIAL_DEFAULT_BAUDRATE = 460_800
@@ -74,50 +70,13 @@ class SerialInterface(threading.Thread):
         self.serial.close()
         self.join()
 
-    def write_chunked(self, bytes_):
-        """Write bytes on serial using the chunked strategy. (deprecated)"""
-        # Send 64 bytes at a time
-        pos = 0
-        while pos < len(bytes_):
-            chunk_end = min(pos + SERIAL_PAYLOAD_CHUNK_SIZE, len(bytes_))
-            self.serial.write(bytes_[pos:chunk_end])
-            self.serial.flush()
-            pos = chunk_end
-            if pos < len(bytes_):  # Only sleep if there are more chunks
-                time.sleep(SERIAL_PAYLOAD_CHUNK_DELAY)
-
-    def write_trigger_byte(self, bytes_):
-        """Write bytes on serial using the trigger byte strategy. (deprecated)"""
-        self.serial.write(bytes_[0:1])
-        time.sleep(
-            0.0001
-        )  # 100 us -- this time is important because of the trigger byte timeout on the nRF side
-        self.serial.write(bytes_[1:])
-        self.serial.flush()
-        time.sleep(SERIAL_PAYLOAD_CHUNK_DELAY)
-
-    def write_chunked_with_trigger_byte(self, bytes_):
-        """Write bytes on serial using the chunked strategy with trigger byte."""
-        # Send 64 bytes at a time
-        pos = 0
-        while pos < len(bytes_):
-            # send trigger byte
-            trigger_byte = bytes_[pos : pos + 1]
-            self.serial.write(trigger_byte)
-            time.sleep(
-                0.0001
-            )  # 100 us -- this time is important because of the trigger byte timeout on the nRF side
-            pos += 1
-
-            # send chunk
-            chunk_end = min(pos + SERIAL_PAYLOAD_CHUNK_SIZE_WITH_TRIGGER_BYTE, len(bytes_))
-            self.serial.write(bytes_[pos:chunk_end])
-            self.serial.flush()
-            pos = chunk_end
-
-            # sleep to force a delay between chunks (or between calls to this function)
-            time.sleep(SERIAL_PAYLOAD_CHUNK_DELAY)
-
     def write(self, bytes_):
-        """Write bytes on serial."""
-        self.write_chunked_with_trigger_byte(bytes_)
+        """Write one HDLC frame on serial, in a single call.
+
+        Delimiting is the framing's job: the flags mark the boundaries and the
+        FCS rejects a torn frame. The gateway receives continuously into
+        rotating DMA buffers, so it has no state that host timing has to match
+        and nothing here paces the bytes. One write, one flush, no sleeps.
+        """
+        self.serial.write(bytes_)
+        self.serial.flush()
