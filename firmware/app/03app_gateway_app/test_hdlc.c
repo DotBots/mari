@@ -120,6 +120,41 @@ static void _check(const hdlc_vector_t *vec, size_t chunk) {
     }
 }
 
+/**
+ * Encode a payload with this same file's encoder and decode it back.
+ *
+ * The decode vectors come from marilib, so nothing else here exercises
+ * mr_hdlc_encode. It carries the uplink, and the largest thing it has to carry
+ * is a full-size mari packet plus its type byte.
+ */
+static void _check_encode_roundtrip(size_t payload_len, uint8_t fill_kind) {
+    uint8_t payload[MAX_FRAME_SIZE];
+    uint8_t frame[MAX_FRAME_SIZE * 2];
+    char    name[64];
+
+    for (size_t i = 0; i < payload_len; i++) {
+        // fill_kind 1 is every byte an HDLC flag or escape, the worst case for
+        // the encoder because each one becomes two bytes on the wire
+        payload[i] = fill_kind ? ((i & 1) ? 0x7E : 0x7D) : (uint8_t)(i * 7 + 3);
+    }
+
+    size_t frame_len = mr_hdlc_encode(payload, payload_len, frame);
+    snprintf(name, sizeof(name), "encode round trip, %zu bytes, fill %u",
+             payload_len, (unsigned)fill_kind);
+
+    decode_result_t result;
+    _replay(frame, frame_len, 64, &result);
+
+    if (result.frame_count != 1 || result.errors != 0) {
+        _fail(name, 64, "did not decode back to exactly one clean frame");
+        return;
+    }
+    if (result.frame_lens[0] != payload_len ||
+        memcmp(result.frames[0], payload, payload_len) != 0) {
+        _fail(name, 64, "decoded payload differs from the encoder's input");
+    }
+}
+
 int main(void) {
     // 1 and 3 tear frames at arbitrary places; 64 is the gateway's DMA buffer
     // size, so it is the split the wire actually produces; 4096 delivers every
@@ -135,11 +170,20 @@ int main(void) {
         }
     }
 
+    // 256 is GATEWAY_IPC_MSG_MAX_SIZE, the largest message the uplink carries
+    const size_t sizes[] = { 1, 2, 64, 145, 254, 255, 256 };
+    for (size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++) {
+        for (uint8_t fill = 0; fill < 2; fill++) {
+            _check_encode_roundtrip(sizes[s], fill);
+            run_count++;
+        }
+    }
+
     if (_failures) {
         printf("\n%d of %zu checks failed\n", _failures, run_count);
         return 1;
     }
-    printf("%zu vectors x %zu chunk sizes = %zu checks passed\n",
-           vec_count, sizeof(chunks) / sizeof(chunks[0]), run_count);
+    printf("%zu checks passed (%zu decode vectors x %zu chunk sizes, plus encode round trips)\n",
+           run_count, vec_count, sizeof(chunks) / sizeof(chunks[0]));
     return 0;
 }
