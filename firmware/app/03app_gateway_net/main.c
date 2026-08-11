@@ -171,9 +171,9 @@ int main(void) {
             // uart_to_radio_tx, so the gap has to be measured here: two IPC
             // signals arriving between two passes leave a single buffer
             // holding only the second message.
-            uint8_t seq                        = ipc_shared_data.uart_to_radio_seq;
+            uint8_t seq = ipc_shared_data.uart_to_radio_seq;
             ipc_shared_data.stats.ipc_u2r_lost += (uint8_t)(seq - _app_vars.ipc_u2r_seq) - 1;
-            _app_vars.ipc_u2r_seq              = seq;
+            _app_vars.ipc_u2r_seq = seq;
 
             uint8_t packet_type = ipc_shared_data.uart_to_radio_tx[0];
             if (packet_type != MARI_EDGE_DATA) {
