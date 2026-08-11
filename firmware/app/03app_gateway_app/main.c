@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "ipc.h"
+#include "gateway_ipc.h"
 
 #include "mr_clock.h"
 #include "mr_device.h"
@@ -49,10 +49,7 @@ typedef struct {
     mr_hdlc_state_t hdlc_state;  ///< decoder state after the last byte fed to it
     uint32_t        rx_frames_ok;
     uint32_t        rx_hdlc_err;
-    uint32_t        rx_frames_oversized;
     uint32_t        tx_queue_drop;
-    uint32_t        ipc_r2u_lost;
-    uint8_t         ipc_r2u_seq;  ///< last radio_to_uart sequence number this core consumed
 } gateway_app_vars_t;
 
 // UART RX and TX pins
@@ -167,17 +164,13 @@ static void _uart_callback(uint8_t *buffer, size_t length) {
             if (msg_len == 0) {
                 continue;
             }
-            if (msg_len > sizeof(ipc_shared_data.uart_to_radio)) {
-                // Longer than the mailbox can carry. Copying it would run past
-                // the shared buffer and truncate its own length field.
-                _app_vars.rx_frames_oversized++;
-                continue;
-            }
             _app_vars.rx_frames_ok++;
-            memcpy((void *)ipc_shared_data.uart_to_radio, _app_vars.hdlc_decode_buffer, msg_len);
-            ipc_shared_data.uart_to_radio_len = (uint8_t)msg_len;
-            ipc_shared_data.uart_to_radio_seq++;
-            NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
+            // A frame too large for a mailbox slot, or one arriving with the
+            // ring full, is refused and counted there rather than written past
+            // the end of shared memory.
+            if (gateway_ipc_push(&ipc_shared_data.uart_to_radio, _app_vars.hdlc_decode_buffer, msg_len)) {
+                NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
+            }
         } else if (hdlc_state == MR_HDLC_STATE_ERROR && previous != MR_HDLC_STATE_ERROR) {
             // The decoder stays in ERROR, dropping bytes, until the next
             // opening flag; only the transition is one torn frame.
@@ -197,13 +190,13 @@ static void _publish_stats(void) {
     ipc_shared_data.stats.uart_rx_hw_framing = uart_stats->hw_framing;
     ipc_shared_data.stats.uart_rx_hw_break   = uart_stats->hw_break;
     ipc_shared_data.stats.uart_rx_frames_ok  = _app_vars.rx_frames_ok;
+    ipc_shared_data.stats.uart_rx_hdlc_err   = _app_vars.rx_hdlc_err;
     ipc_shared_data.stats.uart_rx_slot_full  = uart_stats->rx_slot_full;
     ipc_shared_data.stats.uart_tx_queue_drop = _app_vars.tx_queue_drop;
-    ipc_shared_data.stats.ipc_r2u_lost       = _app_vars.ipc_r2u_lost;
 
-    // A frame the mailbox cannot carry is dropped by the same decision that
-    // rejects a torn one, so it is reported in the same counter.
-    ipc_shared_data.stats.uart_rx_hdlc_err = _app_vars.rx_hdlc_err + _app_vars.rx_frames_oversized;
+    // This core is the producer on the downlink ring, so it is the one that
+    // knows when a message could not be handed over.
+    ipc_shared_data.stats.ipc_u2r_lost = ipc_shared_data.uart_to_radio.dropped;
 }
 
 int main(void) {
@@ -256,16 +249,15 @@ void IPC_IRQHandler(void) {
     if (NRF_IPC_S->EVENTS_RECEIVE[IPC_CHAN_RADIO_TO_UART]) {
         NRF_IPC_S->EVENTS_RECEIVE[IPC_CHAN_RADIO_TO_UART] = 0;
 
-        // This handler is the consumer of radio_to_uart, so a jump of more
-        // than one in the producer's sequence number counts the messages the
-        // net core wrote over before they were read.
-        uint8_t seq = ipc_shared_data.radio_to_uart_seq;
-        _app_vars.ipc_r2u_lost += (uint8_t)(seq - _app_vars.ipc_r2u_seq) - 1;
-        _app_vars.ipc_r2u_seq = seq;
-
-        // Enqueue the frame instead of just setting a flag
-        if (!_tx_queue_enqueue((const uint8_t *)ipc_shared_data.radio_to_uart, ipc_shared_data.radio_to_uart_len)) {
-            _app_vars.tx_queue_drop++;
+        // Drain every message the net core has queued, not just one: the
+        // doorbell rings once per message but says nothing about how many are
+        // waiting, and a message left behind delays the next wake.
+        volatile gateway_ipc_msg_t *msg;
+        while ((msg = gateway_ipc_peek(&ipc_shared_data.radio_to_uart)) != NULL) {
+            if (!_tx_queue_enqueue((const uint8_t *)msg->data, msg->len)) {
+                _app_vars.tx_queue_drop++;
+            }
+            gateway_ipc_pop(&ipc_shared_data.radio_to_uart);
         }
     }
 }
