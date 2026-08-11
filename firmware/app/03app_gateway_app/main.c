@@ -33,11 +33,8 @@ typedef struct {
 } tx_frame_t;
 
 typedef struct {
-    bool    uart_buffer_received;
-    uint8_t uart_buffer[256];
-    size_t  uart_buffer_length;
-
     uint8_t hdlc_encode_buffer[1024];  // Should be large enough
+    uint8_t hdlc_decode_buffer[1024];  // Sized so mr_hdlc_decode can never overrun it
     bool    tx_pending;                // Flag for deferred TX (legacy)
     size_t  tx_frame_len;              // Length of frame to transmit
 
@@ -49,12 +46,13 @@ typedef struct {
 
     // counters this core owns, mirrored into shared RAM for the net core to
     // put in gateway_info
-    uint32_t rx_frames_ok;
-    uint32_t rx_hdlc_err;
-    uint32_t rx_slot_full;
-    uint32_t tx_queue_drop;
-    uint32_t ipc_r2u_lost;
-    uint8_t  ipc_r2u_seq;  ///< last radio_to_uart sequence number this core consumed
+    mr_hdlc_state_t hdlc_state;  ///< decoder state after the last byte fed to it
+    uint32_t        rx_frames_ok;
+    uint32_t        rx_hdlc_err;
+    uint32_t        rx_frames_oversized;
+    uint32_t        tx_queue_drop;
+    uint32_t        ipc_r2u_lost;
+    uint8_t         ipc_r2u_seq;  ///< last radio_to_uart sequence number this core consumed
 } gateway_app_vars_t;
 
 // UART RX and TX pins
@@ -153,19 +151,39 @@ static bool _tx_queue_dequeue(uint8_t *data, size_t *length) {
     return true;
 }
 
+// Called from the main loop, once per received DMA buffer, in arrival order.
+//
+// Every byte of every buffer goes through the decoder: frames arrive back to
+// back and one buffer can carry several, or the tail of one and the head of
+// the next. A frame is decoded the moment it is READY, before the next byte
+// goes in, because an opening flag overwrites an unconsumed READY state.
 static void _uart_callback(uint8_t *buffer, size_t length) {
-    if (length == 0) {
-        return;
+    for (size_t i = 0; i < length; i++) {
+        mr_hdlc_state_t previous   = _app_vars.hdlc_state;
+        mr_hdlc_state_t hdlc_state = mr_hdlc_rx_byte(buffer[i]);
+        _app_vars.hdlc_state       = hdlc_state;
+        if (hdlc_state == MR_HDLC_STATE_READY) {
+            size_t msg_len = mr_hdlc_decode(_app_vars.hdlc_decode_buffer);
+            if (msg_len == 0) {
+                continue;
+            }
+            if (msg_len > sizeof(ipc_shared_data.uart_to_radio)) {
+                // Longer than the mailbox can carry. Copying it would run past
+                // the shared buffer and truncate its own length field.
+                _app_vars.rx_frames_oversized++;
+                continue;
+            }
+            _app_vars.rx_frames_ok++;
+            memcpy((void *)ipc_shared_data.uart_to_radio, _app_vars.hdlc_decode_buffer, msg_len);
+            ipc_shared_data.uart_to_radio_len = (uint8_t)msg_len;
+            ipc_shared_data.uart_to_radio_seq++;
+            NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
+        } else if (hdlc_state == MR_HDLC_STATE_ERROR && previous != MR_HDLC_STATE_ERROR) {
+            // The decoder stays in ERROR, dropping bytes, until the next
+            // opening flag; only the transition is one torn frame.
+            _app_vars.rx_hdlc_err++;
+        }
     }
-
-    if (_app_vars.uart_buffer_received) {
-        // the main loop has not drained the previous chunk yet; it is about to
-        // be overwritten and its bytes never reach the HDLC decoder
-        _app_vars.rx_slot_full++;
-    }
-    memcpy(_app_vars.uart_buffer, buffer, length);
-    _app_vars.uart_buffer_length   = length;
-    _app_vars.uart_buffer_received = true;
 }
 
 // Copy this core's counters into shared RAM. The net core reads them there
@@ -179,10 +197,13 @@ static void _publish_stats(void) {
     ipc_shared_data.stats.uart_rx_hw_framing = uart_stats->hw_framing;
     ipc_shared_data.stats.uart_rx_hw_break   = uart_stats->hw_break;
     ipc_shared_data.stats.uart_rx_frames_ok  = _app_vars.rx_frames_ok;
-    ipc_shared_data.stats.uart_rx_hdlc_err   = _app_vars.rx_hdlc_err;
-    ipc_shared_data.stats.uart_rx_slot_full  = _app_vars.rx_slot_full;
+    ipc_shared_data.stats.uart_rx_slot_full  = uart_stats->rx_slot_full;
     ipc_shared_data.stats.uart_tx_queue_drop = _app_vars.tx_queue_drop;
     ipc_shared_data.stats.ipc_r2u_lost       = _app_vars.ipc_r2u_lost;
+
+    // A frame the mailbox cannot carry is dropped by the same decision that
+    // rejects a torn one, so it is reported in the same counter.
+    ipc_shared_data.stats.uart_rx_hdlc_err = _app_vars.rx_hdlc_err + _app_vars.rx_frames_oversized;
 }
 
 int main(void) {
@@ -206,30 +227,7 @@ int main(void) {
 
         _publish_stats();
 
-        if (_app_vars.uart_buffer_received) {
-            _app_vars.uart_buffer_received = false;
-
-            // use a loop to decode the whole buffer, testing the state machine at each byte
-            for (size_t i = 0; i < _app_vars.uart_buffer_length; i++) {
-                mr_hdlc_state_t hdlc_state = mr_hdlc_rx_byte(_app_vars.uart_buffer[i]);
-                if (hdlc_state == MR_HDLC_STATE_READY) {
-                    // decode the frame and send it to the radio
-                    // decode the frame
-                    size_t msg_len                    = mr_hdlc_decode((uint8_t *)(void *)ipc_shared_data.uart_to_radio);
-                    ipc_shared_data.uart_to_radio_len = msg_len;
-                    if (msg_len) {
-                        _app_vars.rx_frames_ok++;
-                        ipc_shared_data.uart_to_radio_seq++;
-                        NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
-                    }
-                    // we can break since we assume that the python code never sends two frames too fast in a row
-                    break;
-                } else if (hdlc_state == MR_HDLC_STATE_ERROR) {
-                    _app_vars.rx_hdlc_err++;
-                    break;
-                }
-            }
-        }
+        mr_uart_rx_process(MR_UART_INDEX);
 
         // Process queued TX frames when conditions are right
         if (!_tx_queue_is_empty() && !mr_uart_tx_busy(MR_UART_INDEX)) {
