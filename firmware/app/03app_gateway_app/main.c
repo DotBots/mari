@@ -44,19 +44,29 @@ typedef struct {
     uint8_t    tx_queue_tail;
     uint8_t    tx_queue_count;
 
-    // counters this core owns, mirrored into shared RAM for the net core to
-    // put in gateway_info
     mr_hdlc_state_t hdlc_state;  ///< decoder state after the last byte fed to it
-    uint32_t        rx_frames_ok;
-    uint32_t        rx_hdlc_err;
-    uint32_t        tx_queue_drop;
 } gateway_app_vars_t;
+
+/**
+ * @brief Diagnostic counters owned by this core
+ *
+ * Kept apart from the operational state above because nothing reads them to
+ * decide anything: they are incremented on the way past and mirrored into
+ * shared RAM for the network core to put in gateway_info. Adding one here
+ * cannot change how the gateway behaves.
+ */
+typedef struct {
+    uint32_t rx_frames_ok;   ///< frames decoded with a valid checksum
+    uint32_t rx_hdlc_err;    ///< torn or corrupted frames, one per damaged frame
+    uint32_t tx_queue_drop;  ///< frames refused because the TX queue was full
+} gateway_app_dbg_vars_t;
 
 // UART RX and TX pins
 static const mr_gpio_t _mr_uart_tx_pin = { .port = 1, .pin = 1 };
 static const mr_gpio_t _mr_uart_rx_pin = { .port = 1, .pin = 0 };
 
 static gateway_app_vars_t                                           _app_vars = { 0 };
+static gateway_app_dbg_vars_t                                       _dbg_vars = { 0 };
 volatile __attribute__((section(".shared_data"))) ipc_shared_data_t ipc_shared_data;
 
 static void _setup_debug_pins(void) {
@@ -164,7 +174,7 @@ static void _uart_callback(uint8_t *buffer, size_t length) {
             if (msg_len == 0) {
                 continue;
             }
-            _app_vars.rx_frames_ok++;
+            _dbg_vars.rx_frames_ok++;
             // A frame too large for a mailbox slot, or one arriving with the
             // ring full, is refused and counted there rather than written past
             // the end of shared memory.
@@ -174,7 +184,7 @@ static void _uart_callback(uint8_t *buffer, size_t length) {
         } else if (hdlc_state == MR_HDLC_STATE_ERROR && previous != MR_HDLC_STATE_ERROR) {
             // The decoder stays in ERROR, dropping bytes, until the next
             // opening flag; only the transition is one torn frame.
-            _app_vars.rx_hdlc_err++;
+            _dbg_vars.rx_hdlc_err++;
         }
     }
 }
@@ -189,10 +199,10 @@ static void _publish_stats(void) {
     ipc_shared_data.stats.uart_rx_hw_overrun = uart_stats->hw_overrun;
     ipc_shared_data.stats.uart_rx_hw_framing = uart_stats->hw_framing;
     ipc_shared_data.stats.uart_rx_hw_break   = uart_stats->hw_break;
-    ipc_shared_data.stats.uart_rx_frames_ok  = _app_vars.rx_frames_ok;
-    ipc_shared_data.stats.uart_rx_hdlc_err   = _app_vars.rx_hdlc_err;
+    ipc_shared_data.stats.uart_rx_frames_ok  = _dbg_vars.rx_frames_ok;
+    ipc_shared_data.stats.uart_rx_hdlc_err   = _dbg_vars.rx_hdlc_err;
     ipc_shared_data.stats.uart_rx_slot_full  = uart_stats->rx_slot_full;
-    ipc_shared_data.stats.uart_tx_queue_drop = _app_vars.tx_queue_drop;
+    ipc_shared_data.stats.uart_tx_queue_drop = _dbg_vars.tx_queue_drop;
 
     // This core is the producer on the downlink ring, so it is the one that
     // knows when a message could not be handed over.
@@ -255,7 +265,7 @@ void IPC_IRQHandler(void) {
         volatile gateway_ipc_msg_t *msg;
         while ((msg = gateway_ipc_peek(&ipc_shared_data.radio_to_uart)) != NULL) {
             if (!_tx_queue_enqueue((const uint8_t *)msg->data, msg->len)) {
-                _app_vars.tx_queue_drop++;
+                _dbg_vars.tx_queue_drop++;
             }
             gateway_ipc_pop(&ipc_shared_data.radio_to_uart);
         }
