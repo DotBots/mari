@@ -265,6 +265,14 @@ static void _rx_flush_partial_slot(uart_t uart) {
     p->TASKS_FLUSHRX = 1;
     if (_rx_wait_event(&p->EVENTS_ENDRX)) {
         flushed = p->RXD.AMOUNT;
+        // RXD.AMOUNT is not rewritten when FLUSHRX moves nothing, so it can
+        // still report the transfer STOPRX just ended. Two things a genuine
+        // flush cannot be: larger than the MAXCNT set for it, or exactly the
+        // count already accounted for above. Either one means the FIFO was
+        // empty, and trusting it would append stale bytes to a good frame.
+        if (flushed > UART_RX_FLUSH_SIZE || flushed == received) {
+            flushed = 0;
+        }
     }
 
     vars->rx_stats.rx_bytes += received + flushed;
