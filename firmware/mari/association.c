@@ -480,7 +480,7 @@ void mr_assoc_handle_beacon(uint8_t *packet, uint8_t length, uint8_t channel, ui
     // now that we know it's a beacon packet, parse and process it
     mr_beacon_packet_header_t *beacon = (mr_beacon_packet_header_t *)packet;
 
-    if (beacon->version != MARI_PROTOCOL_RADIO_VERSION) {
+    if (beacon->version != MARI_PROTOCOL_VERSION) {
         // ignore packet with different protocol version
         return;
     }

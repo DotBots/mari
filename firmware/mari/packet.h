@@ -23,8 +23,9 @@
 
 /// Radio wire format: beacon and packet headers. A node and a gateway must
 /// agree on this or they cannot associate, so bumping it means reflashing
-/// every device in the network.
-#define MARI_PROTOCOL_RADIO_VERSION 3
+/// every device in the network. It does not cover the gateway_info UART
+/// packet, which has its own version below.
+#define MARI_PROTOCOL_VERSION 3
 
 /// Layout of the gateway_info UART packet, which never goes on air. Only the
 /// gateway and marilib have to agree on it, so it moves on its own.

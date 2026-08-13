@@ -17,8 +17,8 @@
  *
  * @{
  * @file
- * @author Alexandre Abadie <alexandre.abadie@inria.fr>
- * @copyright Inria, 2023
+ * @author Geovane Fedrecheski <geovane.fedrecheski@inria.fr>
+ * @copyright Inria, 2025-now
  * @}
  */
 
