@@ -600,7 +600,7 @@ static void activity_ri4(uint32_t ts) {
 
     mr_packet_header_t *header = (mr_packet_header_t *)mac_vars.received_packet.packet;
 
-    if (header->version != MARI_PROTOCOL_VERSION) {
+    if (header->version != MARI_PROTOCOL_RADIO_VERSION) {
         end_slot();
         return;
     }

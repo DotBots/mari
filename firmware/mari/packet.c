@@ -47,7 +47,7 @@ size_t mr_build_packet_join_response(uint8_t *buffer, uint64_t dst) {
 
 size_t mr_build_packet_beacon(uint8_t *buffer, uint16_t net_id, uint64_t asn, uint8_t remaining_capacity, uint8_t active_schedule_id) {
     mr_beacon_packet_header_t beacon = {
-        .version            = MARI_PROTOCOL_VERSION,
+        .version            = MARI_PROTOCOL_RADIO_VERSION,
         .type               = MARI_PACKET_BEACON,
         .network_id         = net_id,
         .asn                = asn,
@@ -63,7 +63,7 @@ size_t mr_build_packet_beacon(uint8_t *buffer, uint16_t net_id, uint64_t asn, ui
 
 size_t mr_build_uart_packet_gateway_info(uint8_t *buffer, const mr_gateway_uart_stats_t *uart_stats) {
     mr_uart_packet_gateway_info_t gateway_info = {
-        .version     = MARI_PROTOCOL_VERSION,
+        .version     = MARI_GATEWAY_INFO_VERSION,
         .device_id   = mr_device_id(),
         .net_id      = mr_assoc_get_network_id(),
         .schedule_id = mr_scheduler_get_active_schedule_id(),
@@ -89,7 +89,7 @@ static size_t _set_header(uint8_t                *buffer,
     // the payload. A cfg with next_proto explicitly 0 stays RESERVED (0).
     // Namespace owners pass a cfg with next_proto set.
     mr_packet_header_t header = {
-        .version    = MARI_PROTOCOL_VERSION,
+        .version    = MARI_PROTOCOL_RADIO_VERSION,
         .type       = packet_type,
         .network_id = mr_assoc_get_network_id(),
         .dst        = dst,

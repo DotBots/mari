@@ -21,7 +21,14 @@
 
 //=========================== defines ==========================================
 
-#define MARI_PROTOCOL_VERSION 4
+/// Radio wire format: beacon and packet headers. A node and a gateway must
+/// agree on this or they cannot associate, so bumping it means reflashing
+/// every device in the network.
+#define MARI_PROTOCOL_RADIO_VERSION 3
+
+/// Layout of the gateway_info UART packet, which never goes on air. Only the
+/// gateway and marilib have to agree on it, so it moves on its own.
+#define MARI_GATEWAY_INFO_VERSION 1
 
 #define MARI_NET_ID_PATTERN_ANY 0
 #define MARI_NET_ID_DEFAULT     1

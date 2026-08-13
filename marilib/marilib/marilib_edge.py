@@ -8,7 +8,7 @@ from rich import print
 from marilib.communication_adapter import MQTTAdapter, MQTTAdapterDummy, SerialAdapter
 from marilib.mari_protocol import (
     MARI_BROADCAST_ADDRESS,
-    MARI_PROTOCOL_VERSION,
+    MARI_GATEWAY_INFO_VERSION,
     DefaultPayload,
     DefaultPayloadType,
     Frame,
@@ -275,10 +275,10 @@ class MarilibEdge(MarilibBase):
             except (ValueError, ProtocolPayloadParserException) as exc:
                 self._report_gateway_mismatch(str(exc))
                 return False, EdgeEvent.UNKNOWN, None
-            if info.version != MARI_PROTOCOL_VERSION:
+            if info.version != MARI_GATEWAY_INFO_VERSION:
                 self._report_gateway_mismatch(
-                    f"gateway speaks mari protocol v{info.version}, "
-                    f"marilib speaks v{MARI_PROTOCOL_VERSION}"
+                    f"gateway sends gateway_info v{info.version}, "
+                    f"marilib parses v{MARI_GATEWAY_INFO_VERSION}"
                 )
                 return False, EdgeEvent.UNKNOWN, None
             with self.lock:

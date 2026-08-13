@@ -9,7 +9,7 @@ import struct
 
 import pytest
 
-from marilib.mari_protocol import MARI_PROTOCOL_VERSION
+from marilib.mari_protocol import MARI_GATEWAY_INFO_VERSION
 from marilib.model import GatewayInfo
 
 # struct layout, little-endian, packed:
@@ -39,7 +39,7 @@ UART_STAT_NAMES = [
 
 
 def build_gateway_info(
-    version=MARI_PROTOCOL_VERSION,
+    version=MARI_GATEWAY_INFO_VERSION,
     device_id=0x1122334455667788,
     net_id=0x0001,
     schedule_id=1,
@@ -80,7 +80,7 @@ def test_roundtrip_all_fields():
     )
     info = GatewayInfo().from_bytes(payload)
 
-    assert info.version == MARI_PROTOCOL_VERSION
+    assert info.version == MARI_GATEWAY_INFO_VERSION
     assert info.address == 0x1122334455667788
     assert info.network_id == 0xABCD
     assert info.schedule_id == 3

@@ -6,7 +6,7 @@ from enum import IntEnum
 
 import rich
 
-from marilib.mari_protocol import MARI_PROTOCOL_VERSION, Frame, MetricsProbePayload
+from marilib.mari_protocol import MARI_GATEWAY_INFO_VERSION, Frame, MetricsProbePayload
 from marilib.probe_tracker import ProbeTracker
 from marilib.protocol import Packet, PacketFieldMetadata
 
@@ -450,7 +450,7 @@ class GatewayInfo(Packet):
             PacketFieldMetadata(name="ipc_r2u_lost", length=4),
         ]
     )
-    version: int = MARI_PROTOCOL_VERSION
+    version: int = MARI_GATEWAY_INFO_VERSION
     address: int = 0
     network_id: int = 0
     schedule_id: int = 0
