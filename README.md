@@ -4,6 +4,10 @@ Mari is a lightweight wireless connectivity solution designed for dense IoT netw
 
 The driving use case for the design of Mari is the OpenSwarm Testbed of 1,000 [DotBots](https://github.com/DotBots/DotBot-firmware). Mari is suitable for any dense IoT deployment requiring low-latency communication.
 
+Mari has been validated at scale: in January 2026, a single Mari network carried **724 mobile nodes** across 8 independent gateways. The `mari-cloud` TUI below monitors that deployment live, with about 102 nodes per gateway at roughly 270 ms latency.
+
+![The mari-cloud terminal UI monitoring a 724-node Mari network: a summary line reporting the network ID, 8 gateways, 724 nodes and radio PDR, above per-gateway panels listing node count, schedule, latency, PDR and the addresses of the nodes attached to each gateway.](assets/mari-cloud-tui-724-nodes.png)
+
 This repository ships **two halves**:
 
 - [`firmware/`](firmware/) — the C firmware that implements the Mari TSCH-over-BLE link layer on Nordic nRF52840 / nRF5340.
