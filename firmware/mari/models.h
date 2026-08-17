@@ -237,14 +237,35 @@ typedef enum {
     MARI_EDGE_GATEWAY_INFO = 5,
 } mr_gateway_edge_type_t;
 
+// Cumulative gateway-side counters for the host UART link and for the two
+// inter-core mailboxes. They only reset on reboot, so a host reads rates by
+// differencing consecutive gateway_info packets. Every field is owned by
+// exactly one core, which is the producer on the ring it reports: the app core
+// owns all of them except ipc_r2u_lost, since only the net core is in a
+// position to observe a message it could not hand over.
+typedef struct __attribute__((packed)) {
+    uint32_t uart_rx_bytes;       ///< Bytes the UARTE moved from the wire into RAM
+    uint32_t uart_rx_frames_ok;   ///< HDLC frames that passed the FCS check
+    uint32_t uart_rx_hdlc_err;    ///< HDLC frames the decoder rejected
+    uint32_t uart_rx_hw_overrun;  ///< ERRORSRC.OVERRUN: the internal RX FIFO dropped a byte
+    uint32_t uart_rx_hw_framing;  ///< ERRORSRC.FRAMING
+    uint32_t uart_rx_hw_break;    ///< ERRORSRC.BREAK
+    uint32_t uart_rx_slot_full;   ///< DMA buffers discarded because the consumer had not freed a slot
+    uint32_t uart_tx_queue_drop;  ///< Uplink frames dropped because the TX queue was full
+    uint32_t ipc_u2r_lost;        ///< Downlink messages lost between the app and the net core
+    uint32_t ipc_r2u_lost;        ///< Uplink messages lost between the net and the app core
+} mr_gateway_uart_stats_t;
+
 // uart packet for gateway info
 typedef struct __attribute__((packed)) {
-    uint64_t device_id;
-    uint16_t net_id;
-    uint16_t schedule_id;
-    uint64_t sched_usage[MARI_STATS_SCHED_USAGE_SIZE];
-    uint64_t asn;
-    uint32_t timer;
+    uint8_t                 version;
+    uint64_t                device_id;
+    uint16_t                net_id;
+    uint16_t                schedule_id;
+    uint64_t                sched_usage[MARI_STATS_SCHED_USAGE_SIZE];
+    uint64_t                asn;
+    uint32_t                timer;
+    mr_gateway_uart_stats_t uart_stats;
 } mr_uart_packet_gateway_info_t;
 
 // -------- types used for metrics collection --------

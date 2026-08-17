@@ -177,7 +177,7 @@ size_t mr_hdlc_encode(const uint8_t *input, size_t input_len, uint8_t *frame) {
     // Start flag
     frame[frame_len++] = MR_HDLC_FLAG;
 
-    for (uint8_t pos = 0; pos < input_len; pos++) {
+    for (size_t pos = 0; pos < input_len; pos++) {
         uint8_t byte = input[pos];
         fcs          = _mr_hdlc_update_fcs(fcs, byte);
         if (byte == MR_HDLC_ESCAPE) {

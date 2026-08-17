@@ -31,7 +31,7 @@ while True:
         print(f"\nSending {len(payload)} bytes: {payload.hex(' ')}")
         encoded = hdlc_encode(payload)
         print(f"Sending encoded {len(encoded)} bytes: {encoded.hex(' ')}")
-        serial_interface.write_chunked_with_trigger_byte(encoded)
+        serial_interface.write(encoded)
 
     sleep_time = 0.01  # 10 ms
 

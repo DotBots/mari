@@ -44,9 +44,13 @@ make all                                     # default
 make docker                                  # CI path
 ```
 
-**No automated test setup.** `app/01mari_*` directories are
-on-target experimental apps, not a unit-test suite. CI only
-verifies it compiles.
+One host test, for the gateway's HDLC decoder. From
+`app/03app_gateway_app/`, `cc -o test_hdlc test_hdlc.c hdlc.c &&
+./test_hdlc` (regenerate its vectors from marilib's encoder with
+`PYTHONPATH=../../../marilib python3 test_hdlc_vectors.py >
+test_hdlc_vectors.h`). Everything else is on-target: `app/01mari_*` are
+experimental apps, not a unit-test suite, and CI only verifies the
+firmware compiles.
 
 ## Flashing the bench (`flash.sh`)
 

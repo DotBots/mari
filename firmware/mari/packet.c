@@ -61,14 +61,18 @@ size_t mr_build_packet_beacon(uint8_t *buffer, uint16_t net_id, uint64_t asn, ui
     return sizeof(mr_beacon_packet_header_t);
 }
 
-size_t mr_build_uart_packet_gateway_info(uint8_t *buffer) {
+size_t mr_build_uart_packet_gateway_info(uint8_t *buffer, const mr_gateway_uart_stats_t *uart_stats) {
     mr_uart_packet_gateway_info_t gateway_info = {
+        .version     = MARI_GATEWAY_INFO_VERSION,
         .device_id   = mr_device_id(),
         .net_id      = mr_assoc_get_network_id(),
         .schedule_id = mr_scheduler_get_active_schedule_id(),
         .asn         = mr_mac_get_asn(),
     };
     memcpy(gateway_info.sched_usage, mr_scheduler_get_schedule_usage(), sizeof(uint64_t) * MARI_STATS_SCHED_USAGE_SIZE);
+    if (uart_stats) {
+        memcpy(&gateway_info.uart_stats, uart_stats, sizeof(mr_gateway_uart_stats_t));
+    }
     memcpy(buffer, &gateway_info, sizeof(mr_uart_packet_gateway_info_t));
     return sizeof(mr_uart_packet_gateway_info_t);
 }

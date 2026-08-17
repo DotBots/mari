@@ -6,7 +6,7 @@ from enum import IntEnum
 
 import rich
 
-from marilib.mari_protocol import Frame, MetricsProbePayload
+from marilib.mari_protocol import MARI_GATEWAY_INFO_VERSION, Frame, MetricsProbePayload
 from marilib.probe_tracker import ProbeTracker
 from marilib.protocol import Packet, PacketFieldMetadata
 
@@ -422,22 +422,66 @@ class MariNode:
 
 @dataclass
 class GatewayInfo(Packet):
+    """Mirror of mr_uart_packet_gateway_info_t in firmware/mari/models.h.
+
+    The gateway emits one of these per slotframe. Every field after `timer` is
+    a cumulative counter that only resets when the gateway reboots, so a reader
+    takes differences between consecutive packets.
+    """
+
     metadata: list[PacketFieldMetadata] = field(
         default_factory=lambda: [
+            PacketFieldMetadata(name="version", length=1),
             PacketFieldMetadata(name="address", length=8),
             PacketFieldMetadata(name="network_id", length=2),
-            PacketFieldMetadata(name="schedule_id", length=1),
+            PacketFieldMetadata(name="schedule_id", length=2),
             PacketFieldMetadata(name="schedule_stats", length=4 * 8),  # 4 uint64_t values
             PacketFieldMetadata(name="asn", length=8),
             PacketFieldMetadata(name="timer", length=4),
+            PacketFieldMetadata(name="uart_rx_bytes", length=4),
+            PacketFieldMetadata(name="uart_rx_frames_ok", length=4),
+            PacketFieldMetadata(name="uart_rx_hdlc_err", length=4),
+            PacketFieldMetadata(name="uart_rx_hw_overrun", length=4),
+            PacketFieldMetadata(name="uart_rx_hw_framing", length=4),
+            PacketFieldMetadata(name="uart_rx_hw_break", length=4),
+            PacketFieldMetadata(name="uart_rx_slot_full", length=4),
+            PacketFieldMetadata(name="uart_tx_queue_drop", length=4),
+            PacketFieldMetadata(name="ipc_u2r_lost", length=4),
+            PacketFieldMetadata(name="ipc_r2u_lost", length=4),
         ]
     )
+    version: int = MARI_GATEWAY_INFO_VERSION
     address: int = 0
     network_id: int = 0
     schedule_id: int = 0
     schedule_stats: bytes = b""
     asn: int = 0
     timer: int = 0
+    uart_rx_bytes: int = 0
+    uart_rx_frames_ok: int = 0
+    uart_rx_hdlc_err: int = 0
+    uart_rx_hw_overrun: int = 0
+    uart_rx_hw_framing: int = 0
+    uart_rx_hw_break: int = 0
+    uart_rx_slot_full: int = 0
+    uart_tx_queue_drop: int = 0
+    ipc_u2r_lost: int = 0
+    ipc_r2u_lost: int = 0
+
+    def from_bytes(self, bytes_):
+        """Parse a gateway_info payload, rejecting anything that is not one.
+
+        The base parser stops as soon as every field is filled, so a payload
+        built by a firmware with a different layout would be accepted with its
+        trailing bytes ignored and its fields quietly misaligned. gateway_info
+        is a fixed-size struct, so require the exact size.
+        """
+        if len(bytes_) != self.size:
+            raise ValueError(
+                f"gateway_info is {len(bytes_)} bytes, expected {self.size}: "
+                "the gateway firmware and marilib disagree on the layout"
+            )
+        return super().from_bytes(bytes_)
 
     # NOTE: maybe move to a separate class, dedicated to schedule stuff
     def repr_schedule_stats(self):
@@ -451,10 +495,9 @@ class GatewayInfo(Packet):
         all_bits.reverse()
         # print(">>>", reversed(all_bits[0].split("")))
         all_bits = [list(reversed(bits)) for bits in all_bits]
-        # now just flatten the list
+        # now just flatten the list; cell n is bit n of the little-endian
+        # sched_usage bitmap
         all_bits = [item for sublist in all_bits for item in sublist]
-        # FIXME: why do we need to skip the first byte?
-        all_bits = all_bits[8:]
         # cut it down to the number of slots
         all_bits = all_bits[: len(schedule_data["slots"])]
         return "".join(all_bits)

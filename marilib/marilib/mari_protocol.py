@@ -5,6 +5,8 @@ from enum import IntEnum
 from marilib.protocol import Packet, PacketFieldMetadata, PacketType
 
 MARI_PROTOCOL_VERSION = 3
+# The gateway_info UART struct versions independently of the radio format.
+MARI_GATEWAY_INFO_VERSION = 1
 MARI_BROADCAST_ADDRESS = 0xFFFFFFFFFFFFFFFF
 MARI_NET_ID_DEFAULT = 0x0001
 

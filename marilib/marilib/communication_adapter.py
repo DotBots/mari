@@ -1,6 +1,7 @@
 import base64
 import time
 from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
 from urllib.parse import urlparse
 
 import paho.mqtt.client as mqtt
@@ -27,6 +28,25 @@ class CommunicationAdapterBase(ABC):
         """Close the interface."""
 
 
+@dataclass
+class SerialAdapterStats:
+    """Host-side counters for the UART hop, the mirror of the gateway's own.
+
+    The gateway counts what it received; these count what the host sent and
+    what came back. A discrepancy between the two sides localizes a loss to
+    the wire rather than to either endpoint.
+    """
+
+    write_calls: int = 0  # serial.write() calls, one per frame
+    write_bytes: int = 0  # HDLC-encoded bytes handed to pyserial
+    write_errors: int = 0  # writes that raised
+    rx_frames_ok: int = 0  # HDLC frames decoded from the gateway
+    rx_hdlc_err: int = 0  # frames the host decoder rejected
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
 class SerialAdapter(CommunicationAdapterBase):
     """Class used to interface with the serial port."""
 
@@ -34,6 +54,7 @@ class SerialAdapter(CommunicationAdapterBase):
         self.port = port
         self.baudrate = baudrate
         self.hdlc_handler = HDLCHandler()
+        self.stats = SerialAdapterStats()
 
     def on_byte_received(self, byte):
         self.hdlc_handler.handle_byte(byte)
@@ -45,9 +66,17 @@ class SerialAdapter(CommunicationAdapterBase):
             rx_ts_us = time.monotonic_ns() // 1000
             try:
                 payload = self.hdlc_handler.payload
-                self.on_data_received(payload, rx_ts_us)
             except HDLCDecodeException as e:
+                self.stats.rx_hdlc_err += 1
                 print(f"Error decoding payload: {e}")
+                return
+            if not payload:
+                # a short frame or a bad FCS; HDLCHandler.payload logs the
+                # reason and hands back an empty buffer
+                self.stats.rx_hdlc_err += 1
+                return
+            self.stats.rx_frames_ok += 1
+            self.on_data_received(payload, rx_ts_us)
 
     def init(self, on_data_received: callable):
         self.on_data_received = on_data_received
@@ -78,7 +107,13 @@ class SerialAdapter(CommunicationAdapterBase):
                 data[late_stamp_offset : late_stamp_offset + 8] = stamp_us.to_bytes(8, "little")
             self.serial.serial.flush()
             encoded = hdlc_encode(data)
-            self.serial.write(encoded)
+            try:
+                self.serial.write(encoded)
+            except Exception:
+                self.stats.write_errors += 1
+                raise
+            self.stats.write_calls += 1
+            self.stats.write_bytes += len(encoded)
         return stamp_us
 
 

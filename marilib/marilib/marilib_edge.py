@@ -8,6 +8,7 @@ from rich import print
 from marilib.communication_adapter import MQTTAdapter, MQTTAdapterDummy, SerialAdapter
 from marilib.mari_protocol import (
     MARI_BROADCAST_ADDRESS,
+    MARI_GATEWAY_INFO_VERSION,
     DefaultPayload,
     DefaultPayloadType,
     Frame,
@@ -58,6 +59,11 @@ class MarilibEdge(MarilibBase):
     # generic cb_application; unmatched frames go to cb_application only.
     _proto_handlers: dict[int, Callable[[Frame], None]] = field(default_factory=dict, repr=False)
 
+    # Distinct gateway_info rejection reasons already reported. The gateway
+    # sends one gateway_info per slotframe, so an unreported mismatch would
+    # print several times a second.
+    _reported_gateway_mismatches: set[str] = field(default_factory=set, repr=False)
+
     def __post_init__(self):
         self.setup_params = {
             "main_file": self.main_file or "unknown",
@@ -77,7 +83,11 @@ class MarilibEdge(MarilibBase):
         with self.lock:
             self.gateway.update()
             if self.logger and self.logger.active:
-                self.logger.log_periodic_metrics(self.gateway, self.gateway.nodes)
+                self.logger.log_periodic_metrics(
+                    self.gateway,
+                    self.gateway.nodes,
+                    self.serial_interface.stats.as_dict(),
+                )
 
     @property
     def nodes(self) -> list[MariNode]:
@@ -261,11 +271,19 @@ class MarilibEdge(MarilibBase):
 
         if event_type == EdgeEvent.GATEWAY_INFO:
             try:
-                with self.lock:
-                    self.gateway.set_info(GatewayInfo().from_bytes(data[1:]))
-                return True, event_type, self.gateway.info
-            except (ValueError, ProtocolPayloadParserException):
+                info = GatewayInfo().from_bytes(data[1:])
+            except (ValueError, ProtocolPayloadParserException) as exc:
+                self._report_gateway_mismatch(str(exc))
                 return False, EdgeEvent.UNKNOWN, None
+            if info.version != MARI_GATEWAY_INFO_VERSION:
+                self._report_gateway_mismatch(
+                    f"gateway sends gateway_info v{info.version}, "
+                    f"marilib parses v{MARI_GATEWAY_INFO_VERSION}"
+                )
+                return False, EdgeEvent.UNKNOWN, None
+            with self.lock:
+                self.gateway.set_info(info)
+            return True, event_type, self.gateway.info
 
         elif event_type == EdgeEvent.NODE_DATA:
             try:
@@ -329,6 +347,18 @@ class MarilibEdge(MarilibBase):
         self.metrics_tester.stop()
 
     # ============================ Private methods =============================
+
+    def _report_gateway_mismatch(self, reason: str):
+        """Say once, loudly, that a gateway_info could not be used.
+
+        Reaching here means the gateway is running a firmware this marilib does
+        not understand. Nothing downstream works from that point, so the run
+        needs a matching pair reflashed rather than a silent degradation.
+        """
+        if reason in self._reported_gateway_mismatches:
+            return
+        self._reported_gateway_mismatches.add(reason)
+        print(f"[bold red]Rejecting gateway_info: {reason}[/]")
 
     def _is_test_packet(self, payload: bytes) -> bool:
         """Determines if a packet sent FROM the edge is for testing purposes."""

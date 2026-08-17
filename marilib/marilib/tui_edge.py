@@ -293,6 +293,34 @@ class MarilibTUIEdge(MarilibTUI):
         status.append(f"TX/s: {stats.sent_count(1, include_test_packets=True)}  |  ")
         status.append(f"RX/s: {stats.received_count(1, include_test_packets=True)}")
 
+        # UART link health. The host counts what it wrote, the gateway counts
+        # what arrived, and the error counters say where anything missing went.
+        # All are cumulative since the gateway booted.
+        info = mari.gateway.info
+        host = mari.serial_interface.stats
+        errors = (
+            info.uart_rx_hdlc_err
+            + info.uart_rx_hw_overrun
+            + info.uart_rx_hw_framing
+            + info.uart_rx_hw_break
+            + info.uart_rx_slot_full
+            + info.uart_tx_queue_drop
+            + info.ipc_u2r_lost
+            + info.ipc_r2u_lost
+        )
+        status.append("\n")
+        status.append(f"UART: host TX {host.write_calls} frames / {host.write_bytes} B  |  ")
+        status.append(f"gw RX {info.uart_rx_frames_ok} frames / {info.uart_rx_bytes} B  |  ")
+        status.append("errors ")
+        status.append(f"{errors}", style="red" if errors else "green")
+        if errors:
+            status.append(
+                f" (hdlc {info.uart_rx_hdlc_err}, overrun {info.uart_rx_hw_overrun}, "
+                f"framing {info.uart_rx_hw_framing}, break {info.uart_rx_hw_break}, "
+                f"slot-full {info.uart_rx_slot_full}, txq {info.uart_tx_queue_drop}, "
+                f"ipc {info.ipc_u2r_lost}/{info.ipc_r2u_lost})"
+            )
+
         return Panel(
             status,
             title=f"[bold]MariEdge running since {mari.started_ts.strftime('%Y-%m-%d %H:%M:%S')}",

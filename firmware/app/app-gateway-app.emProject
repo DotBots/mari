@@ -19,7 +19,7 @@
       <configuration Name="Common" filter="c;cpp;cxx;cc;h;s;asm;inc" />
       <file file_name="hdlc.c" />
       <file file_name="hdlc.h" />
-      <file file_name="ipc.h" />
+      <file file_name="../gateway_ipc.h" />
       <file file_name="main.c" />
       <file file_name="uart.c" />
       <file file_name="uart.h" />

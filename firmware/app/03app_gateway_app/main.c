@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "ipc.h"
+#include "gateway_ipc.h"
 
 #include "mr_clock.h"
 #include "mr_device.h"
@@ -33,11 +33,8 @@ typedef struct {
 } tx_frame_t;
 
 typedef struct {
-    bool    uart_buffer_received;
-    uint8_t uart_buffer[256];
-    size_t  uart_buffer_length;
-
     uint8_t hdlc_encode_buffer[1024];  // Should be large enough
+    uint8_t hdlc_decode_buffer[1024];  // Sized so mr_hdlc_decode can never overrun it
     bool    tx_pending;                // Flag for deferred TX (legacy)
     size_t  tx_frame_len;              // Length of frame to transmit
 
@@ -46,13 +43,30 @@ typedef struct {
     uint8_t    tx_queue_head;
     uint8_t    tx_queue_tail;
     uint8_t    tx_queue_count;
+
+    mr_hdlc_state_t hdlc_state;  ///< decoder state after the last byte fed to it
 } gateway_app_vars_t;
+
+/**
+ * @brief Diagnostic counters owned by this core
+ *
+ * Kept apart from the operational state above because nothing reads them to
+ * decide anything: they are incremented on the way past and mirrored into
+ * shared RAM for the network core to put in gateway_info. Adding one here
+ * cannot change how the gateway behaves.
+ */
+typedef struct {
+    uint32_t rx_frames_ok;   ///< frames decoded with a valid checksum
+    uint32_t rx_hdlc_err;    ///< torn or corrupted frames, one per damaged frame
+    uint32_t tx_queue_drop;  ///< frames refused because the TX queue was full
+} gateway_app_dbg_vars_t;
 
 // UART RX and TX pins
 static const mr_gpio_t _mr_uart_tx_pin = { .port = 1, .pin = 1 };
 static const mr_gpio_t _mr_uart_rx_pin = { .port = 1, .pin = 0 };
 
 static gateway_app_vars_t                                           _app_vars = { 0 };
+static gateway_app_dbg_vars_t                                       _dbg_vars = { 0 };
 volatile __attribute__((section(".shared_data"))) ipc_shared_data_t ipc_shared_data;
 
 static void _setup_debug_pins(void) {
@@ -144,14 +158,55 @@ static bool _tx_queue_dequeue(uint8_t *data, size_t *length) {
     return true;
 }
 
+// Called from the main loop, once per received DMA buffer, in arrival order.
+//
+// Every byte of every buffer goes through the decoder: frames arrive back to
+// back and one buffer can carry several, or the tail of one and the head of
+// the next. A frame is decoded the moment it is READY, before the next byte
+// goes in, because an opening flag overwrites an unconsumed READY state.
 static void _uart_callback(uint8_t *buffer, size_t length) {
-    if (length == 0) {
-        return;
+    for (size_t i = 0; i < length; i++) {
+        mr_hdlc_state_t previous   = _app_vars.hdlc_state;
+        mr_hdlc_state_t hdlc_state = mr_hdlc_rx_byte(buffer[i]);
+        _app_vars.hdlc_state       = hdlc_state;
+        if (hdlc_state == MR_HDLC_STATE_READY) {
+            size_t msg_len = mr_hdlc_decode(_app_vars.hdlc_decode_buffer);
+            if (msg_len == 0) {
+                continue;
+            }
+            _dbg_vars.rx_frames_ok++;
+            // A frame too large for a mailbox slot, or one arriving with the
+            // ring full, is refused and counted there rather than written past
+            // the end of shared memory.
+            if (gateway_ipc_push(&ipc_shared_data.uart_to_radio, _app_vars.hdlc_decode_buffer, msg_len)) {
+                NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
+            }
+        } else if (hdlc_state == MR_HDLC_STATE_ERROR && previous != MR_HDLC_STATE_ERROR) {
+            // The decoder stays in ERROR, dropping bytes, until the next
+            // opening flag; only the transition is one torn frame.
+            _dbg_vars.rx_hdlc_err++;
+        }
     }
+}
 
-    memcpy(_app_vars.uart_buffer, buffer, length);
-    _app_vars.uart_buffer_length   = length;
-    _app_vars.uart_buffer_received = true;
+// Copy this core's counters into shared RAM. The net core reads them there
+// when it builds gateway_info, so they only need to be as fresh as the
+// slotframe that carries them.
+static void _publish_stats(void) {
+    const mr_uart_rx_stats_t *uart_stats = mr_uart_rx_stats(MR_UART_INDEX);
+
+    ipc_shared_data.stats.uart_rx_bytes      = uart_stats->rx_bytes;
+    ipc_shared_data.stats.uart_rx_hw_overrun = uart_stats->hw_overrun;
+    ipc_shared_data.stats.uart_rx_hw_framing = uart_stats->hw_framing;
+    ipc_shared_data.stats.uart_rx_hw_break   = uart_stats->hw_break;
+    ipc_shared_data.stats.uart_rx_frames_ok  = _dbg_vars.rx_frames_ok;
+    ipc_shared_data.stats.uart_rx_hdlc_err   = _dbg_vars.rx_hdlc_err;
+    ipc_shared_data.stats.uart_rx_slot_full  = uart_stats->rx_slot_full;
+    ipc_shared_data.stats.uart_tx_queue_drop = _dbg_vars.tx_queue_drop;
+
+    // This core is the producer on the downlink ring, so it is the one that
+    // knows when a message could not be handed over.
+    ipc_shared_data.stats.ipc_u2r_lost = ipc_shared_data.uart_to_radio.dropped;
 }
 
 int main(void) {
@@ -173,27 +228,9 @@ int main(void) {
     while (1) {
         __WFE();
 
-        if (_app_vars.uart_buffer_received) {
-            _app_vars.uart_buffer_received = false;
+        _publish_stats();
 
-            // use a loop to decode the whole buffer, testing the state machine at each byte
-            for (size_t i = 0; i < _app_vars.uart_buffer_length; i++) {
-                mr_hdlc_state_t hdlc_state = mr_hdlc_rx_byte(_app_vars.uart_buffer[i]);
-                if (hdlc_state == MR_HDLC_STATE_READY) {
-                    // decode the frame and send it to the radio
-                    // decode the frame
-                    size_t msg_len                    = mr_hdlc_decode((uint8_t *)(void *)ipc_shared_data.uart_to_radio);
-                    ipc_shared_data.uart_to_radio_len = msg_len;
-                    if (msg_len) {
-                        NRF_IPC_S->TASKS_SEND[IPC_CHAN_UART_TO_RADIO] = 1;
-                    }
-                    // we can break since we assume that the python code never sends two frames too fast in a row
-                    break;
-                } else if (hdlc_state == MR_HDLC_STATE_ERROR) {
-                    break;
-                }
-            }
-        }
+        mr_uart_rx_process(MR_UART_INDEX);
 
         // Process queued TX frames when conditions are right
         if (!_tx_queue_is_empty() && !mr_uart_tx_busy(MR_UART_INDEX)) {
@@ -222,9 +259,15 @@ void IPC_IRQHandler(void) {
     if (NRF_IPC_S->EVENTS_RECEIVE[IPC_CHAN_RADIO_TO_UART]) {
         NRF_IPC_S->EVENTS_RECEIVE[IPC_CHAN_RADIO_TO_UART] = 0;
 
-        // Enqueue the frame instead of just setting a flag
-        if (!_tx_queue_enqueue((const uint8_t *)ipc_shared_data.radio_to_uart, ipc_shared_data.radio_to_uart_len)) {
-            // Queue full - could add error handling/statistics here
+        // Drain every message the net core has queued, not just one: the
+        // doorbell rings once per message but says nothing about how many are
+        // waiting, and a message left behind delays the next wake.
+        volatile gateway_ipc_msg_t *msg;
+        while ((msg = gateway_ipc_peek(&ipc_shared_data.radio_to_uart)) != NULL) {
+            if (!_tx_queue_enqueue((const uint8_t *)msg->data, msg->len)) {
+                _dbg_vars.tx_queue_drop++;
+            }
+            gateway_ipc_pop(&ipc_shared_data.radio_to_uart);
         }
     }
 }

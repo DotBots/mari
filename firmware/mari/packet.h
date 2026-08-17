@@ -21,7 +21,15 @@
 
 //=========================== defines ==========================================
 
+/// Radio wire format: beacon and packet headers. A node and a gateway must
+/// agree on this or they cannot associate, so bumping it means reflashing
+/// every device in the network. It does not cover the gateway_info UART
+/// packet, which has its own version below.
 #define MARI_PROTOCOL_VERSION 3
+
+/// Layout of the gateway_info UART packet, which never goes on air. Only the
+/// gateway and marilib have to agree on it, so it moves on its own.
+#define MARI_GATEWAY_INFO_VERSION 1
 
 #define MARI_NET_ID_PATTERN_ANY 0
 #define MARI_NET_ID_DEFAULT     1
@@ -42,6 +50,6 @@ size_t mr_build_packet_keepalive(uint8_t *buffer, uint64_t dst);
 
 size_t mr_build_packet_beacon(uint8_t *buffer, uint16_t net_id, uint64_t asn, uint8_t remaining_capacity, uint8_t active_schedule_id);
 
-size_t mr_build_uart_packet_gateway_info(uint8_t *buffer);
+size_t mr_build_uart_packet_gateway_info(uint8_t *buffer, const mr_gateway_uart_stats_t *uart_stats);
 
 #endif

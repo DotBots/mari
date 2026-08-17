@@ -6,6 +6,30 @@ from typing import IO, List, Dict
 
 from marilib.model import MariGateway, MariNode
 
+# Counters carried in every gateway_info, named as they are in
+# mr_gateway_uart_stats_t (firmware/mari/models.h).
+GATEWAY_UART_STAT_COLUMNS = [
+    "uart_rx_bytes",
+    "uart_rx_frames_ok",
+    "uart_rx_hdlc_err",
+    "uart_rx_hw_overrun",
+    "uart_rx_hw_framing",
+    "uart_rx_hw_break",
+    "uart_rx_slot_full",
+    "uart_tx_queue_drop",
+    "ipc_u2r_lost",
+    "ipc_r2u_lost",
+]
+
+# The host's own view of the same hop, from SerialAdapterStats.
+HOST_UART_STAT_COLUMNS = [
+    "host_write_calls",
+    "host_write_bytes",
+    "host_write_errors",
+    "host_rx_frames_ok",
+    "host_rx_hdlc_err",
+]
+
 
 @dataclass
 class MetricsLogger:
@@ -101,6 +125,13 @@ class MetricsLogger:
             "latest_node_rx_count",
             "latest_gw_tx_count",
             "latest_gw_rx_count",
+            # Cumulative UART / inter-core counters, gateway side (from
+            # gateway_info) then host side (from the serial adapter). They only
+            # reset on reboot, so read them as differences between rows. Any
+            # non-zero error counter localizes a loss on the host-to-gateway
+            # hop, which nothing else in this file can see.
+            *GATEWAY_UART_STAT_COLUMNS,
+            *HOST_UART_STAT_COLUMNS,
         ]
         self._gateway_writer.writerow(gateway_header)
 
@@ -121,6 +152,12 @@ class MetricsLogger:
             "pdr_uplink",
             "radio_pdr_downlink",
             "radio_pdr_uplink",
+            # A rolling window over the last MARI_PROBE_STATS_MAX_LEN (10)
+            # probes, not a cumulative figure: the ratio is taken between the
+            # oldest and newest entries of a bounded deque. Its resolution is
+            # therefore ~1/10 per node, enough to show that several percent are
+            # being lost and never enough to certify three nines. For an exact
+            # figure over any window, pool the raw *_count columns below.
             "uart_pdr_downlink",
             "uart_pdr_uplink",
             "rssi_node_dbm",
@@ -160,10 +197,12 @@ class MetricsLogger:
         self._check_for_rotation()
         return True
 
-    def log_periodic_metrics(self, gateway: MariGateway, nodes: List[MariNode]):
+    def log_periodic_metrics(
+        self, gateway: MariGateway, nodes: List[MariNode], host_stats: Dict[str, int] | None = None
+    ):
         last_log_time = self.last_log_time.get(gateway.info.address, self.segment_start_time)
         if datetime.now() - last_log_time >= timedelta(seconds=self.log_interval_seconds):
-            self.log_gateway_metrics(gateway)
+            self.log_gateway_metrics(gateway, host_stats)
             self.log_all_nodes_metrics(nodes)
             self.last_log_time[gateway.info.address] = datetime.now()
             # Flush at the sampling rate, as log_events.csv already does. Two
@@ -174,10 +213,11 @@ class MetricsLogger:
                 if f and not f.closed:
                     f.flush()
 
-    def log_gateway_metrics(self, gateway: MariGateway):
+    def log_gateway_metrics(self, gateway: MariGateway, host_stats: Dict[str, int] | None = None):
         if not self._log_common() or self._gateway_writer is None:
             return
 
+        host_stats = host_stats or {}
         timestamp = datetime.now().isoformat()
         row = [
             timestamp,
@@ -197,6 +237,8 @@ class MetricsLogger:
             gateway.stats_latest_node_rx_count(),
             gateway.stats_latest_gw_tx_count(),
             gateway.stats_latest_gw_rx_count(),
+            *(getattr(gateway.info, name, "") for name in GATEWAY_UART_STAT_COLUMNS),
+            *(host_stats.get(name.removeprefix("host_"), "") for name in HOST_UART_STAT_COLUMNS),
         ]
         self._gateway_writer.writerow(row)
 
