@@ -96,9 +96,7 @@ def test_roundtrip_sched_usage_is_read_at_the_right_offset():
     Reading it as one byte shifts sched_usage by one, which the schedule
     rendering used to compensate for by dropping the first eight bits.
     """
-    info = GatewayInfo().from_bytes(
-        build_gateway_info(schedule_id=1, sched_usage=(0xFF, 0, 0, 0))
-    )
+    info = GatewayInfo().from_bytes(build_gateway_info(schedule_id=1, sched_usage=(0xFF, 0, 0, 0)))
     assert info.schedule_id == 1
     # 0x00000000000000FF as the first uint64 of a 256-bit little-endian value
     assert info.schedule_stats == 0xFF
