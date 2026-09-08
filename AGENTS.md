@@ -41,8 +41,8 @@ LICENSE        ← Apache 2.0 (covers both halves)
 
 ## Branch policy
 
-- Default branch: `develop` (gitflow). `main` is the release branch.
-- Feature branches off `develop`; PRs target `develop`.
+- Default branch: `main`, and it is the trunk. Releases are tags on it.
+- Feature branches off `main`; PRs target `main`. There is no integration branch.
 
 ## Don't
 
