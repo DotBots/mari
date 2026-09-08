@@ -155,7 +155,7 @@ hatch build
 
 ## Branch policy
 
-This repository uses **gitflow**: `develop` is the integration branch, `main` is releases. Feature branches off `develop`; PRs target `develop`.
+`main` is the trunk and releases are tags on it. Feature branches off `main`; PRs target `main`.
 
 ## Agent guidance
 
