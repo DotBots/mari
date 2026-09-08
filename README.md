@@ -153,10 +153,6 @@ hatch fmt --check
 hatch build
 ```
 
-## Branch policy
-
-`main` is the trunk and releases are tags on it. Feature branches off `main`; PRs target `main`.
-
 ## Agent guidance
 
 If you are an AI coding agent working in this repo, read [`AGENTS.md`](AGENTS.md) (cross-cutting), [`firmware/AGENTS.md`](firmware/AGENTS.md), and [`marilib/AGENTS.md`](marilib/AGENTS.md).
