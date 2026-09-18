@@ -48,9 +48,11 @@ done
 # copy, so whatever state main.c was in - including the uncommitted net id it
 # normally carries - comes back exactly.
 ORIGINAL="$(mktemp)"
+SCRATCH="$(mktemp)"
 cp "$MAIN" "$ORIGINAL"
 BUILT=()
 restore() {
+  rm -f "$SCRATCH"
   cp "$ORIGINAL" "$MAIN" 2>/dev/null || true
   if cmp -s "$ORIGINAL" "$MAIN"; then
     rm -f "$ORIGINAL"
@@ -67,6 +69,24 @@ restore() {
 }
 trap restore EXIT
 
+# In-place sed is not portable: BSD sed (macOS) requires an argument to -i and
+# GNU sed (Linux) refuses one. Filter through a scratch file instead, which both
+# accept, and write back with cat so $MAIN keeps its inode and permissions.
+edit_in_place() {  # <sed-script> <file>
+  sed -E "$1" "$2" > "$SCRATCH"
+  cat "$SCRATCH" > "$2"
+}
+
+# sha256sum is coreutils (Linux); shasum is the perl tool macOS ships. Neither
+# is present everywhere, so pick whichever exists.
+sha256_list() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  else
+    shasum -a 256 "$@"
+  fi
+}
+
 mkdir -p "$OUT_DIR"
 echo "Building ${#SCHEDULES[@]} gateway net-core image(s) into $OUT_DIR"
 echo
@@ -75,7 +95,7 @@ for sched in "${SCHEDULES[@]}"; do
   echo "=== $sched ==="
   # Only the schedule_app line: a blanket substitution would also rewrite the
   # extern declaration on the line above it.
-  sed -i '' -E "s/^(schedule_t[[:space:]]+\*schedule_app[[:space:]]*=[[:space:]]*&)schedule_[a-z]+;/\1schedule_${sched};/" "$MAIN"
+  edit_in_place "s/^(schedule_t[[:space:]]+\*schedule_app[[:space:]]*=[[:space:]]*&)schedule_[a-z]+;/\1schedule_${sched};/" "$MAIN"
   if ! grep -qE "^schedule_t[[:space:]]+\*schedule_app[[:space:]]*=[[:space:]]*&schedule_${sched};" "$MAIN"; then
     echo "Error: could not point schedule_app at schedule_${sched}" >&2
     exit 1
@@ -89,4 +109,4 @@ for sched in "${SCHEDULES[@]}"; do
 done
 
 echo "Done."
-shasum -a 256 "$OUT_DIR"/*.hex | sed 's/^/  /'
+sha256_list "$OUT_DIR"/*.hex | sed 's/^/  /'
