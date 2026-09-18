@@ -5,7 +5,7 @@ import pytest
 
 from marilib.mari_protocol import Frame, Header, MetricsProbePayload
 from marilib.metrics import MetricsTester
-from marilib.model import GatewayInfo, MariGateway, MariNode
+from marilib.model import SCHEDULES, GatewayInfo, MariGateway, MariNode
 from marilib.probe_tracker import MAX_PROBE_RETRIES, PendingProbe
 
 
@@ -85,10 +85,10 @@ def test_unmatched_response_ignored_for_rtt_stats():
 
 def test_timeout_is_two_slotframes():
     tiny, _ = _make_tester(interval=1.0, schedule_id=6)
-    assert tiny._probe_timeout_ms() == pytest.approx(58.62)
+    assert tiny._probe_timeout_ms() == pytest.approx(2 * SCHEDULES[6]["sf_duration"])
 
     huge, _ = _make_tester(interval=1.0, schedule_id=1)
-    assert huge._probe_timeout_ms() == pytest.approx(513.76)
+    assert huge._probe_timeout_ms() == pytest.approx(2 * SCHEDULES[1]["sf_duration"])
 
 
 def test_timeout_disabled_without_schedule():
@@ -106,7 +106,7 @@ def test_timeout_records_effective_latency_and_retransmits():
 
     tester.check_timeouts()
 
-    assert node.stats_avg_effective_latency_ms() == pytest.approx(58.62)
+    assert node.stats_avg_effective_latency_ms() == pytest.approx(2 * SCHEDULES[6]["sf_duration"])
     assert 1000 not in node.sent_probe_packets
     assert 2000 in node.sent_probe_packets
     assert node.sent_probe_packets[2000].retry_count == 1
