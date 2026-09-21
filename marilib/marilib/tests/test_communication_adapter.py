@@ -1,6 +1,16 @@
 """Tests for MQTTAdapter URL parsing and credential handling."""
 
-from marilib.communication_adapter import MQTTAdapter, parse_mqtt_url
+import socket
+import ssl
+
+import pytest
+
+from marilib.communication_adapter import (
+    MQTT_INSECURE_ENV,
+    MQTTAdapter,
+    mqtt_options_from_env,
+    parse_mqtt_url,
+)
 
 
 def test_parse_mqtt_url_parts():
@@ -84,3 +94,48 @@ def test_constructor_credentials_default_none():
     a = MQTTAdapter("h", 1883, is_edge=True)
     assert a.username is None
     assert a.password is None
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", " on "])
+def test_env_insecure_accepts_truthy_values(monkeypatch, value):
+    monkeypatch.setenv(MQTT_INSECURE_ENV, value)
+    assert mqtt_options_from_env()["insecure"] is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "no", "off", "maybe"])
+def test_env_insecure_rejects_anything_else(monkeypatch, value):
+    monkeypatch.setenv(MQTT_INSECURE_ENV, value)
+    assert mqtt_options_from_env()["insecure"] is False
+
+
+def test_env_options_carry_credentials(monkeypatch):
+    monkeypatch.setenv("MARI_MQTT_USER", "alice")
+    monkeypatch.setenv("MARI_MQTT_PASS", "pw")
+    monkeypatch.delenv(MQTT_INSECURE_ENV, raising=False)
+    a = MQTTAdapter.from_url("mqtts://argus:8883", is_edge=True, **mqtt_options_from_env())
+    assert (a.username, a.password, a.insecure) == ("alice", "pw", False)
+
+
+def test_default_tls_context_is_paho_verifying_default():
+    assert MQTTAdapter("h", 8883, is_edge=True, use_tls=True)._tls_context() is None
+
+
+def test_insecure_tls_context_skips_verification():
+    a = MQTTAdapter.from_url("mqtts://argus:8883", is_edge=True, insecure=True)
+    context = a._tls_context()
+    assert context.verify_mode == ssl.CERT_NONE
+    assert context.check_hostname is False
+
+
+def test_unreachable_broker_does_not_raise():
+    """init() runs on the serial reader thread; raising there kills it."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    a = MQTTAdapter("127.0.0.1", port, is_edge=True)
+    try:
+        a.update("1234", lambda data: None)
+        assert a.client is not None
+        assert not a.is_ready()
+    finally:
+        a.close()

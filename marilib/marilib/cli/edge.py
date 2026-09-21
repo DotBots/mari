@@ -1,29 +1,13 @@
-import os
 import time
 
 import click
 from marilib.logger import MetricsLogger
 from marilib.mari_protocol import Frame, MARI_BROADCAST_ADDRESS, DefaultPayload
 from marilib.model import EdgeEvent, MariNode
-from marilib.communication_adapter import SerialAdapter, MQTTAdapter
+from marilib.communication_adapter import SerialAdapter, MQTTAdapter, mqtt_options_from_env
 from marilib.serial_uart import get_default_port
 from marilib.tui_edge import MarilibTUIEdge
 from marilib.marilib_edge import MarilibEdge
-
-
-def mqtt_credentials() -> dict[str, str | None]:
-    """MQTT username and password from the environment, as kwargs.
-
-    Same variable names as the `dotbot` CLI, so one export serves both.
-    Returned as a dict for `**` splatting: positional unpacking collides with
-    `is_edge` at every call site. Keeping credentials out of the URL keeps
-    them out of shell history and out of any command a run sheet reproduces;
-    MQTTAdapter.from_url still accepts the `mqtts://user:pass@host` form.
-    """
-    return {
-        "username": os.environ.get("DOTBOT_MQTT_USER"),
-        "password": os.environ.get("DOTBOT_MQTT_PASS"),
-    }
 
 
 def on_event(event: EdgeEvent, event_data: MariNode | Frame):
@@ -45,7 +29,7 @@ def on_event(event: EdgeEvent, event_data: MariNode | Frame):
     "-m",
     type=str,
     default=None,
-    help="MQTT broker to use (default: None, no cloud)",
+    help="MQTT broker to use (default: None, no cloud). Credentials come from MARI_MQTT_USER / MARI_MQTT_PASS; MARI_MQTT_INSECURE=1 skips the broker certificate check.",
 )
 @click.option(
     "--metrics-probe-interval",
@@ -72,7 +56,7 @@ def main(port: str | None, mqtt_url: str, metrics_probe_interval: float, log_dir
         on_event,
         serial_interface=SerialAdapter(port),
         mqtt_interface=(
-            MQTTAdapter.from_url(mqtt_url, is_edge=True, **mqtt_credentials()) if mqtt_url else None
+            MQTTAdapter.from_url(mqtt_url, is_edge=True, **mqtt_options_from_env()) if mqtt_url else None
         ),
         logger=logger,
         tui=MarilibTUIEdge(),

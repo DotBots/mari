@@ -1,4 +1,6 @@
 import base64
+import os
+import ssl
 import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
@@ -136,6 +138,24 @@ def parse_mqtt_url(url: str):
     return parsed.hostname, port, use_tls, parsed.username, parsed.password
 
 
+MQTT_USER_ENV = "MARI_MQTT_USER"
+MQTT_PASS_ENV = "MARI_MQTT_PASS"
+MQTT_INSECURE_ENV = "MARI_MQTT_INSECURE"
+
+
+def mqtt_options_from_env() -> dict:
+    """`MQTTAdapter.from_url` kwargs read from the environment.
+
+    `MARI_MQTT_INSECURE` takes 1/true/yes/on.
+    """
+    insecure = os.environ.get(MQTT_INSECURE_ENV, "").strip().lower()
+    return {
+        "username": os.environ.get(MQTT_USER_ENV),
+        "password": os.environ.get(MQTT_PASS_ENV),
+        "insecure": insecure in {"1", "true", "yes", "on"},
+    }
+
+
 class MQTTAdapter(CommunicationAdapterBase):
     """Class used to interface with MQTT."""
 
@@ -147,7 +167,9 @@ class MQTTAdapter(CommunicationAdapterBase):
         use_tls: bool = False,
         username: str | None = None,
         password: str | None = None,
+        insecure: bool = False,
     ):
+        """`insecure` skips broker certificate checking on a TLS connection."""
         self.host = host
         self.port = port
         self.is_edge = is_edge
@@ -157,6 +179,7 @@ class MQTTAdapter(CommunicationAdapterBase):
         self.use_tls = use_tls
         self.username = username
         self.password = password
+        self.insecure = insecure
         # optimize qos for throughput
         # 0 = no delivery guarantee, 1 = at least once, 2 = exactly once
         self.qos = 0
@@ -168,6 +191,7 @@ class MQTTAdapter(CommunicationAdapterBase):
         is_edge: bool,
         username: str | None = None,
         password: str | None = None,
+        insecure: bool = False,
     ):
         """Build an MQTTAdapter from a `mqtt(s)://[user:pass@]host[:port]` URL.
 
@@ -183,6 +207,7 @@ class MQTTAdapter(CommunicationAdapterBase):
             use_tls=use_tls,
             username=username if username is not None else url_user,
             password=password if password is not None else url_pass,
+            insecure=insecure,
         )
 
     # ==== public methods ====
@@ -226,13 +251,34 @@ class MQTTAdapter(CommunicationAdapterBase):
         if self.username is not None:
             self.client.username_pw_set(self.username, self.password)
         if self.use_tls:
-            self.client.tls_set_context(context=None)
+            self.client.tls_set_context(context=self._tls_context())
         self.client.on_log = self._on_log
         self.client.on_connect = self._on_connect_edge if self.is_edge else self._on_connect_cloud
         self.client.on_message = self._on_message_edge if self.is_edge else self._on_message_cloud
-        self.client.connect(self.host, self.port, 60)
-        print(f"[yellow]Connected to MQTT broker on {self.host}:{self.port}[/]")
+        # On the edge this runs on the serial reader thread, so a failed
+        # connect must not raise: paho's loop retries in the background.
+        try:
+            self.client.connect(self.host, self.port, 60)
+            print(f"[yellow]Connected to MQTT broker on {self.host}:{self.port}[/]")
+        except (OSError, ValueError) as exc:
+            print(f"[red]MQTT broker {self.host}:{self.port} unreachable: {exc}[/]")
+            if isinstance(exc, ssl.SSLCertVerificationError):
+                print(f"[red]{MQTT_INSECURE_ENV}=1 skips the certificate check[/]")
+            print("[yellow]Retrying the broker in the background[/]")
         self.client.loop_start()
+
+    def _tls_context(self) -> ssl.SSLContext | None:
+        """None asks paho for its default, verifying context."""
+        if not self.insecure:
+            return None
+        print(
+            "[red]Broker certificate checking is OFF: the connection is encrypted "
+            "but the broker is not authenticated[/]"
+        )
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
 
     def close(self):
         if self.client is None:
