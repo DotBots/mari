@@ -10,37 +10,29 @@ from marilib.mari_protocol import MARI_GATEWAY_INFO_VERSION, Frame, MetricsProbe
 from marilib.probe_tracker import ProbeTracker
 from marilib.protocol import Packet, PacketFieldMetadata
 
-# schedules taken from: https://github.com/DotBots/mari-evaluation/blob/main/simulations/radio-schedule.ipynb
+# MARI_WHOLE_SLOT_DURATION in firmware/mari/mac.h: 400 + (4 * 255 + 120) + 240 us.
+MARI_SLOT_DURATION_MS = 1.78
+
+
+def _schedule(name: str, slots: str, max_nodes: int) -> dict:
+    """One schedule entry, with the cell counts and duration read off `slots`."""
+    return {
+        "name": name,
+        "slots": slots,
+        "max_nodes": max_nodes,
+        "d_down": slots.count("D"),
+        "sf_duration": round(len(slots) * MARI_SLOT_DURATION_MS, 2),
+    }
+
+
+# Cell order, cell types and capacities mirror the firmware tables in
+# firmware/mari/all_schedules.c; tests/test_schedules.py fails if they drift.
 SCHEDULES = {
-    # schedule_id: {name, max_nodes, d_down, sf_duration_ms}
-    1: {
-        "name": "huge",
-        "slots": "BBB" + ("UUSDUUUUSDUUU" * 11) + "U" * 0,
-        "max_nodes": 102,
-        "d_down": 22,
-        "sf_duration": 256.88,
-    },
-    3: {
-        "name": "big",
-        "slots": "BBB" + ("UUSDUUUUSDUU" * 8) + "U" * 0,
-        "max_nodes": 66,
-        "d_down": 16,
-        "sf_duration": 174.12,
-    },
-    4: {
-        "name": "medium",
-        "slots": "BBB" + ("UUSDUUUUSDUU" * 5) + "U" * 0,
-        "max_nodes": 44,
-        "d_down": 10,
-        "sf_duration": 115.51,
-    },
-    6: {
-        "name": "tiny",
-        "slots": "BBB" + ("UUSDUUUUSDUU" * 1) + "U" * 0,
-        "max_nodes": 10,
-        "d_down": 2,
-        "sf_duration": 29.31,
-    },
+    # schedule_id: {name, slots, max_nodes, d_down, sf_duration_ms}
+    1: _schedule("huge", "BBB" + "UUSD" + "UUUUSDUUUUUSD" * 10 + "UUUUSD" + "UUUUUU", 102),
+    3: _schedule("big", "BBB" + "UUSD" + "UUUUSD" * 15 + "UUUU", 66),
+    4: _schedule("medium", "BBB" + "UUSD" + "UUUUSD" * 9 + "UUUUUU", 44),
+    6: _schedule("tiny", "BBB" + "UUSD" + "UUUUSD" + "UUUU", 10),
 }
 
 EMPTY_SCHEDULE_DATA = {
