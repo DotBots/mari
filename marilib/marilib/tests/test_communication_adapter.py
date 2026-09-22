@@ -139,3 +139,22 @@ def test_unreachable_broker_does_not_raise():
         assert not a.is_ready()
     finally:
         a.close()
+
+
+@pytest.mark.parametrize("is_edge", [True, False])
+def test_a_refused_connack_is_reported_and_not_subscribed(capsys, is_edge):
+    from unittest.mock import MagicMock
+
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+
+    a = MQTTAdapter("h", 1883, is_edge=is_edge)
+    a.network_id = "1234"
+    a.client = MagicMock()
+    refused = ReasonCode(PacketTypes.CONNACK, "Bad user name or password")
+    on_connect = a._on_connect_edge if is_edge else a._on_connect_cloud
+    on_connect(a.client, None, None, refused, None)
+    a.client.subscribe.assert_not_called()
+    out = capsys.readouterr().out
+    assert "refused" in out
+    assert "MARI_MQTT_USER" in out

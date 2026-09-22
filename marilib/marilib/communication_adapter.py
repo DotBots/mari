@@ -331,11 +331,23 @@ class MQTTAdapter(CommunicationAdapterBase):
         # print(messages)
         pass
 
+    def _refused(self, reason_code) -> bool:
+        """Report a CONNACK the broker refused; paho keeps retrying either way."""
+        if not reason_code.is_failure:
+            return False
+        print(f"[red]MQTT broker {self.host}:{self.port} refused the connection: {reason_code}[/]")
+        print(f"[red]Credentials come from {MQTT_USER_ENV} and {MQTT_PASS_ENV}[/]")
+        return True
+
     def _on_connect_edge(self, client, userdata, flags, reason_code, properties):
+        if self._refused(reason_code):
+            return
         self.client.subscribe(f"/mari/{self.network_id}/to_edge", qos=self.qos)
         print(f"[yellow]Subscribed to /mari/{self.network_id}/to_edge[/]")
 
     def _on_connect_cloud(self, client, userdata, flags, reason_code, properties):
+        if self._refused(reason_code):
+            return
         self.client.subscribe(f"/mari/{self.network_id}/to_cloud", qos=self.qos)
         print(f"[yellow]Subscribed to /mari/{self.network_id}/to_cloud[/]")
 
