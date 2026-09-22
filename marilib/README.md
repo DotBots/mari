@@ -17,6 +17,12 @@ To run with a gateway connected via UART:
 ```
 You can see how it works using `mari-edge --help`.
 
+Broker credentials come from the environment, never the command line:
+`MARI_MQTT_USER` / `MARI_MQTT_PASS`. `MARI_MQTT_INSECURE=1` skips the broker
+certificate check (the link stays encrypted but the broker is no longer
+authenticated), for a bench whose broker certificate has expired or is
+self-signed.
+
 To run with a gateway connected via MQTT:
 ```bash
 # for example, using the Inria Argus MQTT broker
