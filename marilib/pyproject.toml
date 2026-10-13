@@ -6,7 +6,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-    "*.py"
+    "*.py",
+    "marilib/sim/firmware_snapshot.json",
 ]
 exclude = [
 ]
@@ -49,6 +50,7 @@ classifiers = [
 [project.scripts]
 mari-edge = "marilib.cli.edge:main"
 mari-cloud = "marilib.cli.cloud:main"
+mari-sim = "marilib.sim.cli:main"
 
 [tool.ruff]
 lint.select = ["E", "F", "W"]

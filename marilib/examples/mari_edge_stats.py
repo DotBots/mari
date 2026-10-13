@@ -4,129 +4,14 @@ import time
 
 import click
 from marilib.logger import MetricsLogger
-from marilib.mari_protocol import MARI_BROADCAST_ADDRESS, Frame, DefaultPayload, DefaultPayloadType
+from marilib.mari_protocol import MARI_BROADCAST_ADDRESS, Frame, DefaultPayload
 from marilib.marilib_edge import MarilibEdge
-from marilib.model import SCHEDULES, EdgeEvent, GatewayInfo, MariNode, TestState
+from marilib.metrics import LoadTester, probe_interval_for_slotframes
+from marilib.model import EdgeEvent, GatewayInfo, MariNode, TestState
 from marilib.serial_uart import get_default_port
 from marilib.tui_edge import MarilibTUIEdge
 from marilib.communication_adapter import mqtt_options_from_env
 from marilib.communication_adapter import SerialAdapter, MQTTAdapter
-
-
-def probe_interval_for_slotframes(mari: MarilibEdge, every: int) -> float | None:
-    """Seconds between probes to a node, for one probe every `every` slotframes.
-
-    The slotframe is the network's own clock - latency, queue depth and the
-    probe timeout are all measured in it - so a cadence expressed in slotframes
-    samples every schedule at the same rate relative to its own dynamics, which
-    is what makes latency comparable across them.
-
-    It also holds the probe's share of downlink nearly constant without being
-    asked to. That share is N / (every * d_down), and N/d_down is 5.00, 4.40,
-    4.13, 4.64 for tiny, medium, big and huge - the schedules give each node an
-    uplink slot and scale downlink alongside, so the ratio barely moves. The
-    share is therefore about 4.6/every on any of them: ~23% at every=20, ~15%
-    at 30. Below about 15 the probe stream starts crowding out the traffic it
-    is supposed to be measuring.
-
-    Returns None until the gateway has reported a schedule we know.
-    """
-    schedule = SCHEDULES.get(mari.gateway.info.schedule_id)
-    if schedule is None or every <= 0:
-        return None
-    return every * float(schedule["sf_duration"]) / 1000.0
-
-
-class LoadTester(threading.Thread):
-    """Generates filler downlink traffic up to a target link occupancy.
-
-    `--load` is the share of the gateway's downlink capacity the link should
-    carry in total, metrics probes included. Probes are unicast downlink
-    packets competing for the same D slots as the filler, so the filler rate
-    is the target minus the probe rate. Without that subtraction, asking for
-    75% on the huge schedule puts 90% on the link, which measures the knee
-    rather than a loaded network.
-    """
-
-    def __init__(
-        self,
-        mari: MarilibEdge,
-        test_state: TestState,
-        stop_event: threading.Event,
-        probe_interval: float = 0.0,
-    ):
-        super().__init__(daemon=True)
-        self.mari = mari
-        self.test_state = test_state
-        self._stop_event = stop_event
-        self.probe_interval = probe_interval
-        self._warned_over_budget = False
-
-    def run(self):
-        while not self._stop_event.is_set():
-            delay = self.compute_delay()
-            if delay is None:
-                # Gateway schedule not known yet, or the probe stream already
-                # fills the budget. Re-check shortly: both can change as the
-                # gateway reports in and as nodes join or leave.
-                self._stop_event.wait(0.1)
-                continue
-
-            with self.mari.lock:
-                nodes_exist = bool(self.mari.gateway.nodes)
-
-            if nodes_exist:
-                self.mari.send_frame(
-                    MARI_BROADCAST_ADDRESS,
-                    DefaultPayload(type_=DefaultPayloadType.METRICS_LOAD).with_filler_bytes(180),
-                )
-            self._stop_event.wait(delay)
-
-    def probe_rate(self) -> float:
-        """Nominal probe packets/s: one per node per probe interval.
-
-        Nominal, not measured: a probe that times out is retransmitted (up to
-        MAX_PROBE_RETRIES), so under heavy loss the real probe rate is higher
-        and the link carries more than the requested share. That regime is
-        visible in the log as a non-zero pending-probe count and an effective
-        latency pinned at two slotframes.
-        """
-        if self.probe_interval <= 0:
-            return 0.0
-        with self.mari.lock:
-            node_count = len(self.mari.gateway.nodes)
-        return node_count / self.probe_interval
-
-    def compute_delay(self) -> float | None:
-        """Seconds between filler packets, or None if none should be sent.
-
-        Recomputed per packet rather than latched at startup: the probe stream
-        scales with the node count, so a rate fixed during formation would
-        overshoot the target once the network filled up.
-        """
-        if self.test_state.load == 0:
-            return None
-        max_rate = self.mari.get_max_downlink_rate()
-        if max_rate == 0:
-            return None  # gateway schedule not reported yet
-
-        self.test_state.rate = int(max_rate)
-        target_pps = max_rate * (self.test_state.load / 100.0)
-        filler_pps = target_pps - self.probe_rate()
-
-        if filler_pps <= 0:
-            if not self._warned_over_budget:
-                self._warned_over_budget = True
-                sys.stderr.write(
-                    f"Warning: metrics probes alone offer "
-                    f"{self.probe_rate() / max_rate:.0%} of downlink capacity, at or above the "
-                    f"requested {self.test_state.load}%. Sending no filler traffic; either raise "
-                    f"--load or raise --metrics-probe-interval.\n"
-                )
-            return None
-
-        self._warned_over_budget = False
-        return 1.0 / filler_pps
 
 
 def on_event(event: EdgeEvent, event_data: MariNode | Frame | GatewayInfo):
